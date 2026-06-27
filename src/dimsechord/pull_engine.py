@@ -16,6 +16,7 @@ import logging
 import queue
 import threading
 from typing import TYPE_CHECKING
+from weakref import WeakValueDictionary
 
 from dimsechord.exceptions import ArrivalTimeoutError, MoveToSelfError
 from dimsechord.models import (
@@ -64,7 +65,7 @@ class PullEngine:
         self._cmove_timeout = cmove_timeout
         self._arrival_timeout = arrival_timeout
         self._completion_grace = completion_grace
-        self._locks: dict[str, threading.Lock] = {}
+        self._locks: WeakValueDictionary[str, threading.Lock] = WeakValueDictionary()
         self._registry_lock = threading.Lock()
 
     def _series_key(self, study_uid: str, series_uid: str) -> str:
