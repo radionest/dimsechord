@@ -13,7 +13,14 @@ PR_NUM=$(echo "$PR_URL" | grep -oP '\d+$')
 REPORT="/tmp/pr-${PR_NUM}-report.md"
 HOOK_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-nohup "$HOOK_DIR/pr-watch.sh" "$PR_NUM" 12 300 > /dev/null 2>&1 &
+# Fully detach the watcher into its own session so it survives the hook's
+# process-group teardown (nohup alone only ignores SIGHUP, not SIGTERM/SIGKILL).
+if command -v setsid >/dev/null 2>&1; then
+  setsid "$HOOK_DIR/pr-watch.sh" "$PR_NUM" 12 300 </dev/null >/dev/null 2>&1 &
+else
+  nohup "$HOOK_DIR/pr-watch.sh" "$PR_NUM" 12 300 </dev/null >/dev/null 2>&1 &
+  disown
+fi
 
 cat >&2 <<EOF
 PR_CREATED: PR #${PR_NUM} (${PR_URL}).

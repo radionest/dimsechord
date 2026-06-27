@@ -3,7 +3,7 @@
 ## Worktree Workflow
 
 - Feature development: always enter a worktree via `EnterWorktree` before making changes
-- Quick fixes, typos, config changes — work directly in main, no worktree needed
+- Any file change needs a worktree — the `require-worktree` hook blocks Edit/Write on `main`; only `.claude/` infrastructure files are exempt
 - Worktrees contain only git-tracked files. `hooks/`, `settings.json`, `settings.local.json` live in `$CLAUDE_PROJECT_DIR/.claude/` and are shared
 - `ExitWorktree(remove)` requires `discard_changes=true` if there are commits not in main
 - For PRs in review prefer `ExitWorktree(keep)` until merge

@@ -3,7 +3,11 @@
 # Use EnterWorktree to work on a different branch.
 
 INPUT=$(cat)
-COMMAND=$(echo "$INPUT" | grep -oP '"command"\s*:\s*"\K[^"]*' || true)
+if command -v jq >/dev/null 2>&1; then
+  COMMAND=$(printf '%s' "$INPUT" | jq -r '.tool_input.command // empty')
+else
+  COMMAND=$(printf '%s' "$INPUT" | grep -oP '"command"\s*:\s*"\K[^"]*' || true)
+fi
 [ -z "$COMMAND" ] && exit 0
 
 # Check for git checkout/switch (not file-restore variant)
@@ -11,8 +15,10 @@ if ! echo "$COMMAND" | grep -qP 'git\s+(checkout|switch)\b'; then
   exit 0
 fi
 
-# Allow git checkout -- <file> (restore files)
-if echo "$COMMAND" | grep -qP 'git\s+(checkout|switch)\s+--\s'; then
+# Allow file restore: `git checkout [<rev>] -- <path>` / `git switch ... -- <path>`.
+# The `--` (and any preceding revision) must belong to this checkout/switch, not a
+# later chained command, so the match cannot cross a ;, & or | separator.
+if echo "$COMMAND" | grep -qP 'git\s+(checkout|switch)\b[^;&|]*\s--(\s|$)'; then
   exit 0
 fi
 

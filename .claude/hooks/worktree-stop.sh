@@ -9,8 +9,13 @@ if echo "$INPUT" | grep -qE '"stop_hook_active"\s*:\s*true'; then
   exit 0
 fi
 
-# Debounce: don't block again within 120 seconds
-DEBOUNCE_FILE="/tmp/claude-worktree-stop-${PPID}"
+# Debounce per session: don't block again within 120 seconds.
+# Key on the session id (stable, collision-free) rather than a reusable PPID.
+if command -v jq >/dev/null 2>&1; then
+  SESSION_ID=$(printf '%s' "$INPUT" | jq -r '.session_id // empty')
+fi
+[ -z "${SESSION_ID:-}" ] && SESSION_ID="$PPID"
+DEBOUNCE_FILE="/tmp/claude-worktree-stop-${SESSION_ID}"
 if [ -f "$DEBOUNCE_FILE" ]; then
   LAST=$(cat "$DEBOUNCE_FILE" 2>/dev/null || echo 0)
   NOW=$(date +%s)

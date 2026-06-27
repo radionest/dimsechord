@@ -6,7 +6,11 @@ git rev-parse --is-inside-work-tree >/dev/null 2>&1 || exit 0
 
 # Skip files outside the repository (plan files, global .claude/, etc.)
 INPUT=$(cat)
-FILE_PATH=$(echo "$INPUT" | grep -oP '"file_path"\s*:\s*"\K[^"]*' || true)
+if command -v jq >/dev/null 2>&1; then
+  FILE_PATH=$(printf '%s' "$INPUT" | jq -r '.tool_input.file_path // empty')
+else
+  FILE_PATH=$(printf '%s' "$INPUT" | grep -oP '"file_path"\s*:\s*"\K[^"]*' || true)
+fi
 if [ -n "$FILE_PATH" ]; then
   REPO_ROOT=$(git rev-parse --show-toplevel 2>/dev/null)
   case "$FILE_PATH" in
