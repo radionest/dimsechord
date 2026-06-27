@@ -3,6 +3,7 @@ from pathlib import Path
 from dimsechord._models import (
     MODALITIES_SEPARATOR,
     AssociationConfig,
+    BatchStoreResult,
     DicomNode,
     QueryRetrieveLevel,
     RetrieveRequest,
@@ -42,9 +43,7 @@ def test_storage_config_defaults() -> None:
 
 
 def test_association_config_defaults() -> None:
-    cfg = AssociationConfig(
-        calling_aet="ME", called_aet="PACS", peer_host="h", peer_port=104
-    )
+    cfg = AssociationConfig(calling_aet="ME", called_aet="PACS", peer_host="h", peer_port=104)
     assert cfg.max_pdu == 16384
     assert cfg.timeout == 30.0
 
@@ -59,3 +58,17 @@ def test_retrieve_result_counters_default_zero() -> None:
 def test_dicom_node() -> None:
     node = DicomNode(aet="PACS", host="1.2.3.4", port=104)
     assert (node.aet, node.host, node.port) == ("PACS", "1.2.3.4", 104)
+
+
+def test_mutable_defaults_are_not_shared_between_instances() -> None:
+    a = RetrieveResult(status="pending")
+    b = RetrieveResult(status="pending")
+    a.failed_sop_instances.append("1.2.3")
+    a.instances["k"] = 1
+    assert b.failed_sop_instances == []
+    assert b.instances == {}
+
+    x = BatchStoreResult()
+    y = BatchStoreResult()
+    x.failed_sop_uids.append("1.2.3")
+    assert y.failed_sop_uids == []
