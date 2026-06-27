@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from dimsechord.models import (
+from dimsechord._models import (
     MODALITIES_SEPARATOR,
     AssociationConfig,
     DicomNode,

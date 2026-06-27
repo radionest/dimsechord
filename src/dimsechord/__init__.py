@@ -1,86 +1,77 @@
-"""dimsechord — neutral pure-Python DICOM + DICOMweb core."""
+"""dimsechord — neutral pure-Python DICOM + DICOMweb core.
 
-from dimsechord.cache import DicomCache, MemoryCachedSeries
-from dimsechord.client import DicomClient
-from dimsechord.converter import (
+This module is the **only** public surface. Everything else lives in
+underscore-prefixed modules (``dimsechord._scu``, ``dimsechord._cache``, …)
+and is private: importing from those modules is unsupported and may break
+without notice. The library is consumed by several projects (``dicarina``,
+``clarinet``); keeping the surface small keeps internal refactoring free.
+
+If something you need is not exported here, extend this surface (add it to a
+private module and re-export it) rather than importing a private symbol.
+"""
+
+from dimsechord._cache import DicomCache, MemoryCachedSeries
+from dimsechord._client import DicomClient
+from dimsechord._converter import (
     convert_datasets_to_dicom_json,
     dataset_to_dicom_json,
     image_result_to_dicom_json,
     series_result_to_dicom_json,
     study_result_to_dicom_json,
 )
-from dimsechord.exceptions import (
+from dimsechord._exceptions import (
     ArrivalTimeoutError,
     AssociationError,
     DimsechordError,
     MoveToSelfError,
     PoolExhaustedError,
 )
-from dimsechord.handlers import StorageHandler, create_store_handler
-from dimsechord.index import CacheIndex, IndexedInstance
-from dimsechord.models import (
-    AssociationConfig,
+from dimsechord._models import (
     BatchStoreResult,
     DicomNode,
     ImageQuery,
     ImageResult,
     QueryRetrieveLevel,
-    RetrieveRequest,
     RetrieveResult,
     SeriesQuery,
     SeriesResult,
-    StorageConfig,
-    StorageMode,
     StudyQuery,
     StudyResult,
 )
-from dimsechord.multipart import build_multipart_response, extract_frames_from_dataset
-from dimsechord.pool import AssociationPool
-from dimsechord.pull_engine import PullEngine
-from dimsechord.scp import MoveSession, StorageSCP, get_storage_scp, shutdown_storage_scp
-from dimsechord.scu import DicomOperations
+from dimsechord._multipart import build_multipart_response, extract_frames_from_dataset
+from dimsechord._pool import AssociationPool
+from dimsechord._pull_engine import PullEngine
+from dimsechord._scp import StorageSCP
 
 __version__ = "0.1.0"
 
 __all__ = [
     "ArrivalTimeoutError",
-    "AssociationConfig",
     "AssociationError",
     "AssociationPool",
     "BatchStoreResult",
-    "CacheIndex",
     "DicomCache",
     "DicomClient",
     "DicomNode",
-    "DicomOperations",
     "DimsechordError",
     "ImageQuery",
     "ImageResult",
-    "IndexedInstance",
     "MemoryCachedSeries",
-    "MoveSession",
     "MoveToSelfError",
     "PoolExhaustedError",
     "PullEngine",
     "QueryRetrieveLevel",
-    "RetrieveRequest",
     "RetrieveResult",
     "SeriesQuery",
     "SeriesResult",
-    "StorageConfig",
-    "StorageHandler",
-    "StorageMode",
     "StorageSCP",
     "StudyQuery",
     "StudyResult",
     "build_multipart_response",
     "convert_datasets_to_dicom_json",
-    "create_store_handler",
     "dataset_to_dicom_json",
     "extract_frames_from_dataset",
-    "get_storage_scp",
     "image_result_to_dicom_json",
     "series_result_to_dicom_json",
-    "shutdown_storage_scp",
     "study_result_to_dicom_json",
 ]

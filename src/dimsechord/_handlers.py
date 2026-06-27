@@ -1,5 +1,12 @@
 """Event handlers for DICOM C-STORE operations."""
 
+# Internal API — NOT part of dimsechord's public surface (see ``dimsechord/__init__.py``).
+# Before importing ``StorageHandler`` / ``create_store_handler`` into a consumer, stop and
+# reconsider: the public ``StorageSCP`` + ``PullEngine`` already drive move-to-self
+# reception and the streaming forward path. If you think you need this raw C-STORE
+# handler, prefer EXTENDING the public surface over importing this private module.
+# Direct imports here are unsupported and may change or break without notice.
+
 from __future__ import annotations
 
 import logging
@@ -7,7 +14,7 @@ from typing import TYPE_CHECKING, Any
 
 from pynetdicom import evt
 
-from dimsechord.models import StorageMode
+from dimsechord._models import StorageMode
 
 if TYPE_CHECKING:
     from pathlib import Path

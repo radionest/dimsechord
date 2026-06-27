@@ -2,7 +2,7 @@ import pytest
 from pynetdicom import AE
 from pynetdicom.sop_class import MRImageStorage  # type: ignore[attr-defined]
 
-from dimsechord.scp import StorageSCP
+from dimsechord._scp import StorageSCP
 from tests.factories import make_instance
 
 

@@ -6,9 +6,9 @@ from pynetdicom.sop_class import (  # type: ignore[attr-defined]
     Verification,
 )
 
-from dimsechord.client import DicomClient
-from dimsechord.models import AssociationConfig, DicomNode, SeriesQuery, StudyQuery
-from dimsechord.scu import DicomOperations
+from dimsechord._client import DicomClient
+from dimsechord._models import AssociationConfig, DicomNode, SeriesQuery, StudyQuery
+from dimsechord._scu import DicomOperations
 from tests.fake_pacs import FakePacs
 
 

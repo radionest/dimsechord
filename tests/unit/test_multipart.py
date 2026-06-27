@@ -1,6 +1,6 @@
 from pydicom import Dataset
 
-from dimsechord.multipart import build_multipart_response, extract_frames_from_dataset
+from dimsechord._multipart import build_multipart_response, extract_frames_from_dataset
 
 
 def test_extract_single_frame_returns_all_pixeldata_per_request() -> None:

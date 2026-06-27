@@ -1,13 +1,11 @@
 import pytest
 
-from dimsechord.cache import DicomCache
-from dimsechord.exceptions import AssociationError, MoveToSelfError
-from dimsechord.index import CacheIndex
-from dimsechord.models import DicomNode
-from dimsechord.pool import AssociationPool
-from dimsechord.pull_engine import PullEngine
-from dimsechord.scp import StorageSCP
-from dimsechord.scu import DicomOperations
+from dimsechord._cache import DicomCache
+from dimsechord._exceptions import AssociationError, MoveToSelfError
+from dimsechord._models import DicomNode
+from dimsechord._pool import AssociationPool
+from dimsechord._pull_engine import PullEngine
+from dimsechord._scp import StorageSCP
 
 
 @pytest.fixture
@@ -19,20 +17,17 @@ def engine(fake_pacs, free_port, tmp_path):
     # The fake PACS must know where to route DESTPOOL (our SCP).
     fake_pacs.register_destination("DESTPOOL", "127.0.0.1", scp_port)
 
-    idx = CacheIndex(str(tmp_path / "index.db"))
-    cache = DicomCache(base_dir=tmp_path / "cache", index=idx)
-    ops = DicomOperations(calling_aet="DESTPOOL")
+    cache = DicomCache(base_dir=tmp_path / "cache", index_path=tmp_path / "index.db")
     pacs = DicomNode(aet=fake_pacs.aet, host="127.0.0.1", port=fake_pacs.port)
     eng = PullEngine(
-        pool=pool, scp=scp, cache=cache, index=idx, ops=ops, pacs=pacs,
+        pool=pool, scp=scp, cache=cache, pacs=pacs,
         cmove_timeout=60.0, arrival_timeout=30.0,
     )
     try:
-        yield eng, cache, idx
+        yield eng, cache, cache._index
     finally:
         scp.stop()
         cache.shutdown()
-        idx.close()
 
 
 @pytest.mark.timeout(90)
@@ -100,16 +95,12 @@ def test_real_move_failure_raises_association_error(free_port, tmp_path) -> None
     pool = AssociationPool(aets=["FAILPOOL"], per_aet_cap=1)
     scp = StorageSCP()
     scp.start(aets=["FAILPOOL"], port=scp_port)
-    idx = CacheIndex(str(tmp_path / "index.db"))
-    cache = DicomCache(base_dir=tmp_path / "cache", index=idx)
-    ops = DicomOperations(calling_aet="FAILPOOL")
+    cache = DicomCache(base_dir=tmp_path / "cache", index_path=tmp_path / "index.db")
     pacs = DicomNode(aet="DEADPACS", host="127.0.0.1", port=dead_port)
     eng = PullEngine(
         pool=pool,
         scp=scp,
         cache=cache,
-        index=idx,
-        ops=ops,
         pacs=pacs,
         cmove_timeout=5.0,
         arrival_timeout=5.0,
@@ -120,4 +111,3 @@ def test_real_move_failure_raises_association_error(free_port, tmp_path) -> None
     finally:
         scp.stop()
         cache.shutdown()
-        idx.close()

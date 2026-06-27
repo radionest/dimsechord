@@ -2,8 +2,8 @@ import threading
 
 import pytest
 
-from dimsechord.exceptions import PoolExhaustedError
-from dimsechord.pool import AssociationPool
+from dimsechord._exceptions import PoolExhaustedError
+from dimsechord._pool import AssociationPool
 
 
 def test_empty_aets_rejected() -> None:

@@ -22,7 +22,7 @@ import pydicom
 from cachetools import TTLCache
 from pydicom import Dataset
 
-from dimsechord.index import CacheIndex, IndexedInstance
+from dimsechord._index import CacheIndex, IndexedInstance
 
 logger = logging.getLogger(__name__)
 
@@ -44,8 +44,8 @@ class DicomCache:
     def __init__(
         self,
         base_dir: Path | str,
-        index: CacheIndex,
         *,
+        index_path: Path | str | None = None,
         ttl_hours: int = 24,
         max_size_gb: float = 10.0,
         memory_ttl_minutes: int = 30,
@@ -53,7 +53,9 @@ class DicomCache:
         disk_write_concurrency: int = 4,
     ) -> None:
         self._base_dir = Path(base_dir)
-        self._index = index
+        db_path = Path(index_path) if index_path is not None else self._base_dir / "index.db"
+        db_path.parent.mkdir(parents=True, exist_ok=True)
+        self._index = CacheIndex(db_path)
         self._ttl_seconds = ttl_hours * 3600
         self._max_size_bytes = int(max_size_gb * 1024**3)
         self._memory_cache: TTLCache[str, MemoryCachedSeries] = TTLCache(
@@ -232,4 +234,5 @@ class DicomCache:
     def shutdown(self) -> None:
         self._executor.shutdown(wait=True)
         self._memory_cache.clear()
+        self._index.close()
         logger.info("DicomCache shutdown complete")

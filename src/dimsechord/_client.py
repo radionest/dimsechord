@@ -11,7 +11,7 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from pydicom import Dataset
 
-from dimsechord.models import (
+from dimsechord._models import (
     AssociationConfig,
     BatchStoreResult,
     DicomNode,
@@ -25,7 +25,7 @@ from dimsechord.models import (
     StudyQuery,
     StudyResult,
 )
-from dimsechord.scu import DicomOperations
+from dimsechord._scu import DicomOperations
 
 logger = logging.getLogger(__name__)
 

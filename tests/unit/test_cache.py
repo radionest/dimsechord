@@ -3,18 +3,20 @@ import dataclasses
 import pytest
 from pydicom import dcmread
 
-from dimsechord.cache import DicomCache, MemoryCachedSeries
-from dimsechord.index import CacheIndex
+from dimsechord._cache import DicomCache, MemoryCachedSeries
 from tests.factories import make_instance
 
 
 @pytest.fixture
 def cache(tmp_path):
-    idx = CacheIndex(str(tmp_path / "index.db"))
-    c = DicomCache(base_dir=tmp_path / "cache", index=idx, ttl_hours=24, max_size_gb=10.0)
+    c = DicomCache(
+        base_dir=tmp_path / "cache",
+        index_path=tmp_path / "index.db",
+        ttl_hours=24,
+        max_size_gb=10.0,
+    )
     yield c
     c.shutdown()
-    idx.close()
 
 
 def test_put_and_get_memory(cache) -> None:

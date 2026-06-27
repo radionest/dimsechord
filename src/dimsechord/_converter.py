@@ -11,7 +11,7 @@ from typing import Any
 from pydicom import Dataset
 from pydicom.dataelem import DataElement
 
-from dimsechord.models import (
+from dimsechord._models import (
     MODALITIES_SEPARATOR,
     ImageResult,
     SeriesResult,
