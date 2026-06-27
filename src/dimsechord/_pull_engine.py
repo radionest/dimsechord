@@ -16,9 +16,11 @@ import asyncio
 import logging
 import queue
 import threading
+import time
 from typing import TYPE_CHECKING
 from weakref import WeakValueDictionary
 
+from dimsechord._cache import MemoryCachedSeries
 from dimsechord._exceptions import ArrivalTimeoutError, MoveToSelfError
 from dimsechord._models import (
     AssociationConfig,
@@ -35,7 +37,7 @@ if TYPE_CHECKING:
 
     from pydicom import Dataset
 
-    from dimsechord._cache import DicomCache, MemoryCachedSeries
+    from dimsechord._cache import DicomCache
     from dimsechord._pool import AssociationPool
     from dimsechord._scp import MoveSession, StorageSCP
 
@@ -344,6 +346,13 @@ class PullEngine:
         cached = self._cache.get_series_from_memory(study_uid, series_uid)
         if cached is not None:
             return cached
+        if not instances:
+            return MemoryCachedSeries(
+                study_uid=study_uid,
+                series_uid=series_uid,
+                instances={},
+                cached_at=time.time(),
+            )
         return self._cache.put_series_to_memory(
             study_uid, series_uid, instances, disk_persisted=False
         )
