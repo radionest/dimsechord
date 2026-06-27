@@ -25,6 +25,8 @@ from dimsechord._models import (
     DicomNode,
     QueryRetrieveLevel,
     RetrieveRequest,
+    StorageConfig,
+    StorageMode,
 )
 from dimsechord._scu import DicomOperations
 
@@ -143,6 +145,40 @@ class _MoveToSelfTransport:
             return None
 
 
+class _CGetTransport:
+    """C-GET retrieval transport: in-association, no pool/SCP.
+
+    ``stream`` performs a blocking C-GET to memory and yields the collected
+    ``(sop_uid, dataset)`` pairs as a batch (C-GET delivers on one association).
+    """
+
+    def __init__(
+        self,
+        *,
+        pacs: DicomNode,
+        calling_aet: str,
+        max_pdu: int = 16384,
+        cget_timeout: float = 300.0,
+    ) -> None:
+        self._pacs = pacs
+        self._calling_aet = calling_aet
+        self._max_pdu = max_pdu
+        self._cget_timeout = cget_timeout
+
+    def stream(self, request: RetrieveRequest) -> Iterator[tuple[str, Dataset]]:
+        ops = DicomOperations(calling_aet=self._calling_aet, max_pdu=self._max_pdu)
+        config = AssociationConfig(
+            calling_aet=self._calling_aet,
+            called_aet=self._pacs.aet,
+            peer_host=self._pacs.host,
+            peer_port=self._pacs.port,
+            max_pdu=self._max_pdu,
+            timeout=self._cget_timeout,
+        )
+        result = ops.retrieve_via_get(config, request, StorageConfig(mode=StorageMode.MEMORY))
+        yield from result.instances.items()
+
+
 class PullEngine:
     """Drives C-MOVE-to-self, streams instances to consumers, tees to cache+index."""
 
@@ -171,11 +207,34 @@ class PullEngine:
             cache,
         )
 
-    def _init(self, transport: _MoveToSelfTransport, cache: DicomCache) -> None:
+    def _init(self, transport: _MoveToSelfTransport | _CGetTransport, cache: DicomCache) -> None:
         self._transport = transport
         self._cache = cache
         self._locks: WeakValueDictionary[str, threading.Lock] = WeakValueDictionary()
         self._registry_lock = threading.Lock()
+
+    @classmethod
+    def via_cget(
+        cls,
+        cache: DicomCache,
+        pacs: DicomNode,
+        *,
+        calling_aet: str,
+        max_pdu: int = 16384,
+        cget_timeout: float = 300.0,
+    ) -> PullEngine:
+        """Build a cache-filling engine that retrieves via C-GET (no pool/SCP)."""
+        eng = cls.__new__(cls)
+        eng._init(
+            _CGetTransport(
+                pacs=pacs,
+                calling_aet=calling_aet,
+                max_pdu=max_pdu,
+                cget_timeout=cget_timeout,
+            ),
+            cache,
+        )
+        return eng
 
     def _series_key(self, study_uid: str, series_uid: str) -> str:
         return f"{study_uid}/{series_uid}"
