@@ -3,8 +3,8 @@ from unittest.mock import MagicMock
 import pytest
 from pydicom import Dataset
 
-from dimsechord.handlers import StorageHandler, create_store_handler
-from dimsechord.models import StorageMode
+from dimsechord._handlers import StorageHandler, create_store_handler
+from dimsechord._models import StorageMode
 
 
 def _event_for(ds: Dataset) -> MagicMock:

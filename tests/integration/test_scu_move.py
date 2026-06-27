@@ -2,15 +2,15 @@ import threading
 
 import pytest
 
-from dimsechord.models import (
+from dimsechord._models import (
     AssociationConfig,
     QueryRetrieveLevel,
     RetrieveRequest,
     StorageConfig,
     StorageMode,
 )
-from dimsechord.scp import StorageSCP
-from dimsechord.scu import DicomOperations
+from dimsechord._scp import StorageSCP
+from dimsechord._scu import DicomOperations
 
 
 @pytest.mark.timeout(60)

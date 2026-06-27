@@ -1,4 +1,12 @@
-"""Pydantic models for DICOM operations."""
+"""Pydantic models for DICOM operations.
+
+Only a subset of these models is re-exported from ``dimsechord/__init__.py`` (the
+queries, results, ``DicomNode``, ``QueryRetrieveLevel``). The rest —
+``AssociationConfig``, ``RetrieveRequest``, ``StorageConfig``, ``StorageMode`` —
+are INTERNAL: they exist to drive the private SCU / handlers. Before importing one
+into a consumer, prefer the public façade (``DicomClient`` / ``PullEngine``), or
+extend the public surface, instead of depending on these private types.
+"""
 
 from enum import StrEnum
 from pathlib import Path

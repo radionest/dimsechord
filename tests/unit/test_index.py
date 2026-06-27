@@ -1,4 +1,4 @@
-from dimsechord.index import CacheIndex, IndexedInstance
+from dimsechord._index import CacheIndex, IndexedInstance
 
 
 def _inst(sop: str, *, series: str = "S1", size: int = 100, cached: float = 1000.0,

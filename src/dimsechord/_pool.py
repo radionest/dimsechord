@@ -11,7 +11,7 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from collections.abc import Iterator
 
-from dimsechord.exceptions import PoolExhaustedError
+from dimsechord._exceptions import PoolExhaustedError
 
 logger = logging.getLogger(__name__)
 

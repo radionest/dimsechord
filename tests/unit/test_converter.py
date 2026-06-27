@@ -2,12 +2,12 @@ import logging
 
 from pydicom import Dataset
 
-from dimsechord.converter import (
+from dimsechord._converter import (
     convert_datasets_to_dicom_json,
     dataset_to_dicom_json,
     study_result_to_dicom_json,
 )
-from dimsechord.models import StudyResult
+from dimsechord._models import StudyResult
 
 
 def test_study_result_to_dicom_json_tags_and_pn() -> None:

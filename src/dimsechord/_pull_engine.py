@@ -18,24 +18,23 @@ import threading
 from typing import TYPE_CHECKING
 from weakref import WeakValueDictionary
 
-from dimsechord.exceptions import ArrivalTimeoutError, MoveToSelfError
-from dimsechord.models import (
+from dimsechord._exceptions import ArrivalTimeoutError, MoveToSelfError
+from dimsechord._models import (
     AssociationConfig,
     DicomNode,
     QueryRetrieveLevel,
     RetrieveRequest,
 )
+from dimsechord._scu import DicomOperations
 
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator, Callable, Iterator
 
     from pydicom import Dataset
 
-    from dimsechord.cache import DicomCache, MemoryCachedSeries
-    from dimsechord.index import CacheIndex
-    from dimsechord.pool import AssociationPool
-    from dimsechord.scp import MoveSession, StorageSCP
-    from dimsechord.scu import DicomOperations
+    from dimsechord._cache import DicomCache, MemoryCachedSeries
+    from dimsechord._pool import AssociationPool
+    from dimsechord._scp import MoveSession, StorageSCP
 
 logger = logging.getLogger(__name__)
 
@@ -48,10 +47,9 @@ class PullEngine:
         pool: AssociationPool,
         scp: StorageSCP,
         cache: DicomCache,
-        index: CacheIndex,
-        ops: DicomOperations,
         pacs: DicomNode,
         *,
+        max_pdu: int = 16384,
         cmove_timeout: float = 300.0,
         arrival_timeout: float = 60.0,
         completion_grace: float = 5.0,
@@ -59,9 +57,8 @@ class PullEngine:
         self._pool = pool
         self._scp = scp
         self._cache = cache
-        self._index = index
-        self._ops = ops
         self._pacs = pacs
+        self._max_pdu = max_pdu
         self._cmove_timeout = cmove_timeout
         self._arrival_timeout = arrival_timeout
         self._completion_grace = completion_grace
@@ -207,7 +204,11 @@ class PullEngine:
                     peer_host=self._pacs.host,
                     peer_port=self._pacs.port,
                 )
-                result = self._ops.move_study(config, request, destination_aet=aet)
+                # SCU built per lease so its AE title == the leased AET (the C-MOVE
+                # destination); a shared SCU with a fixed calling AET would mismatch
+                # the leased AET when the pool holds N > 1 identities.
+                ops = DicomOperations(calling_aet=aet, max_pdu=self._max_pdu)
+                result = ops.move_study(config, request, destination_aet=aet)
                 if result.num_completed:
                     self._scp.set_expected(scp_key, result.num_completed)
                     self._scp.wait_for_completion(scp_key, self._completion_grace)

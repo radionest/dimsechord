@@ -1,6 +1,6 @@
 import pytest
 
-from dimsechord.exceptions import (
+from dimsechord._exceptions import (
     ArrivalTimeoutError,
     AssociationError,
     DimsechordError,

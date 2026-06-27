@@ -1,5 +1,13 @@
 """Synchronous DICOM operations using pynetdicom (C-FIND / C-MOVE / C-STORE)."""
 
+# Internal API — NOT part of dimsechord's public surface (see ``dimsechord/__init__.py``).
+# Before importing ``DicomOperations`` into a consumer (dicarina / clarinet), stop and
+# reconsider: the public façade — ``DicomClient`` (async C-FIND / C-STORE / C-MOVE) and
+# ``PullEngine`` (move-to-self retrieval) — is meant to cover every supported use case.
+# If it genuinely does not, EXTEND the public surface (add a method/function and export
+# it from ``__init__``) rather than reaching in here. Direct imports of this module are
+# unsupported and may change or break without notice.
+
 import logging
 import threading
 import time
@@ -17,10 +25,10 @@ from pynetdicom.sop_class import (  # type: ignore[attr-defined]
 )
 
 if TYPE_CHECKING:
-    from dimsechord.scp import StorageSCP
+    from dimsechord._scp import StorageSCP
 
-from dimsechord.exceptions import AssociationError
-from dimsechord.models import (
+from dimsechord._exceptions import AssociationError
+from dimsechord._models import (
     MODALITIES_SEPARATOR,
     AssociationConfig,
     BatchStoreResult,
