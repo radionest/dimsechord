@@ -1,4 +1,4 @@
-"""In-process pynetdicom fake PACS: C-FIND + C-MOVE + C-ECHO, C-MOVE-only (no C-GET)."""
+"""In-process pynetdicom fake PACS: C-FIND + C-MOVE + C-GET + C-ECHO."""
 
 from __future__ import annotations
 
@@ -11,8 +11,10 @@ from pydicom import Dataset
 from pynetdicom import AE, StoragePresentationContexts, evt
 from pynetdicom.sop_class import (  # type: ignore[attr-defined]
     PatientRootQueryRetrieveInformationModelFind,
+    PatientRootQueryRetrieveInformationModelGet,
     PatientRootQueryRetrieveInformationModelMove,
     StudyRootQueryRetrieveInformationModelFind,
+    StudyRootQueryRetrieveInformationModelGet,
     StudyRootQueryRetrieveInformationModelMove,
     Verification,
 )
@@ -42,15 +44,20 @@ class FakePacs:
         ae.add_supported_context(StudyRootQueryRetrieveInformationModelFind)
         ae.add_supported_context(PatientRootQueryRetrieveInformationModelMove)
         ae.add_supported_context(StudyRootQueryRetrieveInformationModelMove)
+        ae.add_supported_context(PatientRootQueryRetrieveInformationModelGet)
+        ae.add_supported_context(StudyRootQueryRetrieveInformationModelGet)
         ae.add_supported_context(Verification)
-        # C-MOVE SCP also acts as a C-STORE SCU toward the destination.
+        # C-MOVE sends C-STORE to a separate destination (requested context); C-GET
+        # sends C-STORE back over the SAME association, so the storage contexts must
+        # accept the requestor's SCP role (scu_role=True lets us act as Storage SCU).
         for cx in StoragePresentationContexts:
             if cx.abstract_syntax is not None:
-                ae.add_supported_context(cx.abstract_syntax)
+                ae.add_supported_context(cx.abstract_syntax, scu_role=True, scp_role=True)
                 ae.add_requested_context(cx.abstract_syntax)
         handlers = [
             (evt.EVT_C_FIND, self._on_find),
             (evt.EVT_C_MOVE, self._on_move),
+            (evt.EVT_C_GET, self._on_get),
             (evt.EVT_C_ECHO, self._on_echo),
         ]
         self._server = ae.start_server(
@@ -150,3 +157,11 @@ class FakePacs:
         yield len(matches)  # 2nd yield: number of C-STORE sub-operations
         for ds in matches:
             yield (0xFF00, ds)  # pending: send this instance
+
+    def _on_get(
+        self, event: evt.Event
+    ) -> Iterator[int | tuple[int, Dataset | None]]:
+        matches = self._match(event.identifier)
+        yield len(matches)  # 1st yield: number of C-STORE sub-operations
+        for ds in matches:
+            yield (0xFF00, ds)  # pynetdicom sends each as C-STORE on this association

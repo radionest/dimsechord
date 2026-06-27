@@ -16,11 +16,14 @@ from contextlib import contextmanager
 from typing import TYPE_CHECKING, Any
 
 from pydicom import Dataset
-from pynetdicom import AE, StoragePresentationContexts
+from pynetdicom import AE, StoragePresentationContexts, build_role
+from pynetdicom.pdu_primitives import SCP_SCU_RoleSelectionNegotiation
 from pynetdicom.sop_class import (  # type: ignore[attr-defined]
     PatientRootQueryRetrieveInformationModelFind,
+    PatientRootQueryRetrieveInformationModelGet,
     PatientRootQueryRetrieveInformationModelMove,
     StudyRootQueryRetrieveInformationModelFind,
+    StudyRootQueryRetrieveInformationModelGet,
     StudyRootQueryRetrieveInformationModelMove,
 )
 
@@ -28,6 +31,7 @@ if TYPE_CHECKING:
     from dimsechord._scp import StorageSCP
 
 from dimsechord._exceptions import AssociationError
+from dimsechord._handlers import create_store_handler
 from dimsechord._models import (
     MODALITIES_SEPARATOR,
     AssociationConfig,
@@ -145,6 +149,25 @@ class DicomOperations:
         ae.add_requested_context(StudyRootQueryRetrieveInformationModelFind)
         ae.add_requested_context(StudyRootQueryRetrieveInformationModelMove)
         return ae
+
+    def _create_get_ae(self) -> tuple[AE, list[SCP_SCU_RoleSelectionNegotiation]]:
+        """Create an AE for C-GET with SCP/SCU role negotiation.
+
+        C-GET delivers instances as C-STORE sub-operations over the SAME
+        association, so we request SCP role for each storage presentation context.
+        Capped at 126 to leave room for the two GET contexts within the DICOM
+        128-context limit.
+        """
+        ae = AE(ae_title=self.calling_aet)
+        ae.maximum_pdu_size = self.max_pdu
+        ae.add_requested_context(PatientRootQueryRetrieveInformationModelGet)
+        ae.add_requested_context(StudyRootQueryRetrieveInformationModelGet)
+        roles: list[SCP_SCU_RoleSelectionNegotiation] = []
+        for cx in StoragePresentationContexts[:126]:
+            if cx.abstract_syntax is not None:
+                ae.add_requested_context(cx.abstract_syntax)
+                roles.append(build_role(cx.abstract_syntax, scp_role=True))
+        return ae, roles
 
     @contextmanager
     def _association(
@@ -449,6 +472,79 @@ class DicomOperations:
                         logger.warning(f"C-MOVE status: 0x{status.Status:04x}")
 
             return result
+
+    def retrieve_via_get(
+        self,
+        config: AssociationConfig,
+        request: RetrieveRequest,
+        storage: StorageConfig,
+        on_progress: Callable[[int, int | None], None] | None = None,
+    ) -> RetrieveResult:
+        """Retrieve instances via C-GET (same-association C-STORE sub-operations).
+
+        Symmetric to retrieve_via_move but in-association: no StorageSCP, no pool.
+        Handles STUDY and SERIES levels via request.level. MEMORY mode returns the
+        instances in result.instances; DISK mode writes them under storage.output_dir.
+
+        Raises:
+            AssociationError: association fails, or the peer does not accept the
+                C-GET presentation context.
+        """
+        ae, roles = self._create_get_ae()
+        ds = self._build_retrieve_dataset(request)
+        handlers, handler = create_store_handler(
+            mode=storage.mode,
+            output_dir=storage.output_dir,
+            destination_aet=storage.destination_aet,
+            destination_host=storage.destination_host,
+            destination_port=storage.destination_port,
+        )
+        try:
+            with self._association(ae, config, evt_handlers=handlers, ext_neg=roles) as assoc:
+                result = RetrieveResult(status="pending")
+                try:
+                    responses = assoc.send_c_get(
+                        ds, PatientRootQueryRetrieveInformationModelGet
+                    )
+                except ValueError as e:
+                    raise AssociationError(
+                        f"Peer did not accept the C-GET presentation context: {e}"
+                    ) from e
+
+                for status, _identifier in responses:
+                    if not status:
+                        continue
+                    if hasattr(status, "NumberOfRemainingSuboperations"):
+                        result.num_remaining = status.NumberOfRemainingSuboperations or 0
+                    if hasattr(status, "NumberOfCompletedSuboperations"):
+                        result.num_completed = status.NumberOfCompletedSuboperations or 0
+                    if hasattr(status, "NumberOfFailedSuboperations"):
+                        result.num_failed = status.NumberOfFailedSuboperations or 0
+                    if hasattr(status, "NumberOfWarningSuboperations"):
+                        result.num_warning = status.NumberOfWarningSuboperations or 0
+
+                    if on_progress and result.num_completed > 0 and result.num_completed % 50 == 0:
+                        total = result.num_completed + result.num_remaining
+                        on_progress(result.num_completed, total)
+
+                    match status.Status:
+                        case 0x0000:
+                            result.status = "success"
+                            logger.info(
+                                f"C-GET completed: {result.num_completed} completed, "
+                                f"{result.num_failed} failed"
+                            )
+                        case 0xFF00:
+                            result.status = "pending"
+                        case _:
+                            result.status = f"warning_0x{status.Status:04x}"
+                            logger.warning(f"C-GET status: 0x{status.Status:04x}")
+
+                if storage.mode == StorageMode.MEMORY:
+                    result.instances = handler.get_stored_instances()
+                return result
+        finally:
+            handler.close()
 
     def retrieve_via_move(
         self,
