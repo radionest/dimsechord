@@ -6,6 +6,8 @@ from pynetdicom.sop_class import (  # type: ignore[attr-defined]
     Verification,
 )
 
+from dimsechord.models import AssociationConfig, SeriesQuery, StudyQuery
+from dimsechord.scu import DicomOperations
 from tests.fake_pacs import FakePacs
 
 
@@ -35,3 +37,30 @@ def test_fake_pacs_answers_echo_and_find(fake_pacs: FakePacs, seeded_study) -> N
         assert str(studies[0].StudyInstanceUID) == seeded_study["study"][0]
     finally:
         assoc.release()
+
+
+def _config(pacs) -> AssociationConfig:
+    return AssociationConfig(
+        calling_aet="TESTSCU", called_aet=pacs.aet, peer_host="127.0.0.1", peer_port=pacs.port
+    )
+
+
+@pytest.mark.timeout(30)
+def test_scu_find_studies_and_series(fake_pacs, seeded_study) -> None:
+    ops = DicomOperations(calling_aet="TESTSCU")
+    studies = ops.find_studies(_config(fake_pacs), StudyQuery())
+    assert len(studies) == 1
+    assert studies[0].study_instance_uid == seeded_study["study"][0]
+    assert studies[0].number_of_study_related_series == 2
+
+    series = ops.find_series(
+        _config(fake_pacs), SeriesQuery(study_instance_uid=seeded_study["study"][0])
+    )
+    assert {s.series_instance_uid for s in series} == set(seeded_study["series"])
+
+
+@pytest.mark.timeout(30)
+def test_query_dataset_pins_utf8_charset() -> None:
+    ops = DicomOperations(calling_aet="X")
+    ds = ops._build_study_query_dataset(StudyQuery(patient_name="ИВАНОВ"))
+    assert ds.SpecificCharacterSet == "ISO_IR 192"

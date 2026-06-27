@@ -47,6 +47,7 @@ class FakePacs:
         for cx in StoragePresentationContexts:
             if cx.abstract_syntax is not None:
                 ae.add_supported_context(cx.abstract_syntax)
+                ae.add_requested_context(cx.abstract_syntax)
         handlers = [
             (evt.EVT_C_FIND, self._on_find),
             (evt.EVT_C_MOVE, self._on_move),
