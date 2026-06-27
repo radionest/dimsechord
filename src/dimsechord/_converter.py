@@ -1,6 +1,6 @@
 """DICOM JSON conversion for DICOMweb responses.
 
-Converts Pydantic models and pydicom Datasets into DICOM JSON format
+Converts result dataclasses and pydicom Datasets into DICOM JSON format
 as defined by the DICOMweb standard (PS3.18 Appendix F).
 """
 
