@@ -47,7 +47,7 @@ def test_schedule_tee_runs_in_background_then_flush(cache, tmp_path) -> None:
     cache.schedule_tee("ST", "SE", "I2", inst)
     cache.flush_pending_writes()
     assert (tmp_path / "cache" / "ST" / "SE" / "I2.dcm").exists()
-    assert cache._index.series_cached("ST", "SE")
+    assert cache.series_cached("ST", "SE")
 
 
 def test_read_instance_via_index(cache) -> None:

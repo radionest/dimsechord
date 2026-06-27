@@ -2,10 +2,10 @@
 
 # Internal API — NOT part of dimsechord's public surface (see ``dimsechord/__init__.py``).
 # Before importing ``StorageHandler`` / ``create_store_handler`` into a consumer, stop and
-# reconsider: the public ``StorageSCP`` + ``PullEngine`` already drive move-to-self
-# reception and the streaming forward path. If you think you need this raw C-STORE
-# handler, prefer EXTENDING the public surface over importing this private module.
-# Direct imports here are unsupported and may change or break without notice.
+# reconsider: move-to-self reception and streaming run through the public ``StorageSCP`` +
+# ``PullEngine``. If you think you need this raw C-STORE handler (a DISK / MEMORY / FORWARD
+# sink), prefer EXTENDING the public surface over importing this private module. Direct
+# imports here are unsupported and may change or break without notice.
 
 from __future__ import annotations
 

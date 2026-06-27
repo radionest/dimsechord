@@ -175,21 +175,3 @@ class StorageSCP:
         if session is not None:
             return session
         return self._sessions.get(f"{study_uid}/")
-
-
-# ── Module-level singleton ────────────────────────────────────────
-_scp: StorageSCP | None = None
-
-
-def get_storage_scp() -> StorageSCP:
-    global _scp
-    if _scp is None:
-        _scp = StorageSCP()
-    return _scp
-
-
-def shutdown_storage_scp() -> None:
-    global _scp
-    if _scp is not None:
-        _scp.stop()
-    _scp = StorageSCP()

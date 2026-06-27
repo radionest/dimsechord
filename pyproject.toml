@@ -1,6 +1,6 @@
 [project]
 name = "dimsechord"
-version = "0.1.0"
+version = "0.2.0"
 description = "Neutral pure-Python DICOM + DICOMweb core: SCU, C-STORE SCP, cache, AssociationPool, pull-engine."
 requires-python = ">=3.12"
 authors = [{ name = "Denis Nesterov" }]

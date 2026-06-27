@@ -139,6 +139,10 @@ class DicomCache:
         self._index.touch(sop_uid)
         return ds
 
+    def series_cached(self, study_uid: str, series_uid: str) -> bool:
+        """Whether the disk tier holds at least one instance of the series."""
+        return self._index.series_cached(study_uid, series_uid)
+
     # ── tee (synchronous + thread-pool background) ───────────────
     def write_instance(
         self, study_uid: str, series_uid: str, sop_uid: str, ds: Dataset, source: str = "pacs"

@@ -55,8 +55,6 @@ MUST_STAY_PRIVATE = {
     "CacheIndex",
     "IndexedInstance",
     "MoveSession",
-    "get_storage_scp",
-    "shutdown_storage_scp",
 }
 
 

@@ -43,7 +43,7 @@ from dimsechord._pool import AssociationPool
 from dimsechord._pull_engine import PullEngine
 from dimsechord._scp import StorageSCP
 
-__version__ = "0.1.0"
+__version__ = "0.2.0"
 
 __all__ = [
     "ArrivalTimeoutError",
