@@ -13,6 +13,8 @@ private module and re-export it) rather than importing a private symbol.
 from dimsechord._cache import DicomCache, MemoryCachedSeries
 from dimsechord._client import DicomClient
 from dimsechord._converter import (
+    DicomJson,
+    TagValue,
     convert_datasets_to_dicom_json,
     dataset_to_dicom_json,
     image_result_to_dicom_json,
@@ -52,6 +54,7 @@ __all__ = [
     "BatchStoreResult",
     "DicomCache",
     "DicomClient",
+    "DicomJson",
     "DicomNode",
     "DimsechordError",
     "ImageQuery",
@@ -67,6 +70,7 @@ __all__ = [
     "StorageSCP",
     "StudyQuery",
     "StudyResult",
+    "TagValue",
     "build_multipart_response",
     "convert_datasets_to_dicom_json",
     "dataset_to_dicom_json",
