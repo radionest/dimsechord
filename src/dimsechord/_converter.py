@@ -6,7 +6,7 @@ as defined by the DICOMweb standard (PS3.18 Appendix F).
 
 import logging
 from collections.abc import Iterable
-from typing import Any
+from typing import Any, NotRequired, TypedDict, cast
 
 from pydicom import Dataset
 from pydicom.dataelem import DataElement
@@ -18,17 +18,30 @@ from dimsechord._models import (
     StudyResult,
 )
 
+
+class TagValue(TypedDict):
+    """One DICOM-JSON tag value (PS3.18 Annex F): a VR plus its payload."""
+
+    vr: str
+    Value: NotRequired[list[Any]]
+    BulkDataURI: NotRequired[str]
+    InlineBinary: NotRequired[str]
+
+
+#: DICOM-JSON object: 8-hex-digit tag → its VR-tagged value.
+DicomJson = dict[str, TagValue]
+
 logger = logging.getLogger(__name__)
 
 
-def _tag_value(vr: str, value: Any) -> dict[str, Any]:
-    entry: dict[str, Any] = {"vr": vr}
+def _tag_value(vr: str, value: Any) -> TagValue:
+    entry: TagValue = {"vr": vr}
     if value is not None:
         entry["Value"] = value if isinstance(value, list) else [value]
     return entry
 
 
-def _fields_to_dicom_json(fields: list[tuple[str, str, Any]]) -> dict[str, Any]:
+def _fields_to_dicom_json(fields: list[tuple[str, str, Any]]) -> DicomJson:
     return {tag: _tag_value(vr, val) for tag, vr, val in fields if val is not None}
 
 
@@ -45,7 +58,7 @@ def _modalities_to_list(raw: str | None) -> list[str] | None:
     return parts or None
 
 
-def study_result_to_dicom_json(result: StudyResult) -> dict[str, Any]:
+def study_result_to_dicom_json(result: StudyResult) -> DicomJson:
     return _fields_to_dicom_json(
         [
             ("0020000D", "UI", result.study_instance_uid),
@@ -66,7 +79,7 @@ def study_result_to_dicom_json(result: StudyResult) -> dict[str, Any]:
     )
 
 
-def series_result_to_dicom_json(result: SeriesResult) -> dict[str, Any]:
+def series_result_to_dicom_json(result: SeriesResult) -> DicomJson:
     return _fields_to_dicom_json(
         [
             ("0020000D", "UI", result.study_instance_uid),
@@ -79,7 +92,7 @@ def series_result_to_dicom_json(result: SeriesResult) -> dict[str, Any]:
     )
 
 
-def image_result_to_dicom_json(result: ImageResult) -> dict[str, Any]:
+def image_result_to_dicom_json(result: ImageResult) -> DicomJson:
     return _fields_to_dicom_json(
         [
             ("0020000D", "UI", result.study_instance_uid),
@@ -108,7 +121,7 @@ def _skip_bulk_data(_data_element: DataElement) -> str:
     return ""
 
 
-def dataset_to_dicom_json(ds: Dataset, base_url: str) -> dict[str, Any]:
+def dataset_to_dicom_json(ds: Dataset, base_url: str) -> DicomJson:
     """Convert a pydicom Dataset to DICOM JSON, replacing PixelData with BulkDataURI.
 
     The original dataset is **never mutated** — PixelData is skipped during JSON
@@ -158,13 +171,11 @@ def dataset_to_dicom_json(ds: Dataset, base_url: str) -> dict[str, Any]:
             ),
         }
 
-    return json_dict
+    return cast("DicomJson", json_dict)
 
 
-def convert_datasets_to_dicom_json(
-    datasets: Iterable[Dataset], base_url: str
-) -> list[dict[str, Any]]:
-    metadata: list[dict[str, Any]] = []
+def convert_datasets_to_dicom_json(datasets: Iterable[Dataset], base_url: str) -> list[DicomJson]:
+    metadata: list[DicomJson] = []
     for ds in datasets:
         try:
             metadata.append(dataset_to_dicom_json(ds, base_url))
