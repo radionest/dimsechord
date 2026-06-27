@@ -9,6 +9,9 @@ import logging
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+    from pathlib import Path
+
     from pydicom import Dataset
 
 from dimsechord._models import (
@@ -22,6 +25,8 @@ from dimsechord._models import (
     RetrieveResult,
     SeriesQuery,
     SeriesResult,
+    StorageConfig,
+    StorageMode,
     StudyQuery,
     StudyResult,
 )
@@ -114,4 +119,107 @@ class DicomClient:
         )
         return await asyncio.to_thread(
             self._operations.move_study, config, request, destination_aet
+        )
+
+    async def _retrieve_via_get(
+        self,
+        *,
+        level: QueryRetrieveLevel,
+        mode: StorageMode,
+        study_uid: str,
+        series_uid: str | None,
+        peer: DicomNode,
+        output_dir: Path | None,
+        patient_id: str | None,
+        timeout: float,
+        on_progress: Callable[[int, int | None], None] | None = None,
+    ) -> RetrieveResult:
+        config = self._create_association_config(peer.aet, peer.host, peer.port, timeout)
+        request = RetrieveRequest(
+            level=level,
+            study_instance_uid=study_uid,
+            series_instance_uid=series_uid,
+            patient_id=patient_id,
+        )
+        storage = StorageConfig(mode=mode, output_dir=output_dir)
+        return await asyncio.to_thread(
+            self._operations.retrieve_via_get, config, request, storage, on_progress
+        )
+
+    async def get_study(
+        self,
+        study_uid: str,
+        peer: DicomNode,
+        output_dir: Path,
+        patient_id: str | None = None,
+        timeout: float = 300.0,
+    ) -> RetrieveResult:
+        return await self._retrieve_via_get(
+            level=QueryRetrieveLevel.STUDY,
+            mode=StorageMode.DISK,
+            study_uid=study_uid,
+            series_uid=None,
+            peer=peer,
+            output_dir=output_dir,
+            patient_id=patient_id,
+            timeout=timeout,
+        )
+
+    async def get_series(
+        self,
+        study_uid: str,
+        series_uid: str,
+        peer: DicomNode,
+        output_dir: Path,
+        patient_id: str | None = None,
+        timeout: float = 300.0,
+    ) -> RetrieveResult:
+        return await self._retrieve_via_get(
+            level=QueryRetrieveLevel.SERIES,
+            mode=StorageMode.DISK,
+            study_uid=study_uid,
+            series_uid=series_uid,
+            peer=peer,
+            output_dir=output_dir,
+            patient_id=patient_id,
+            timeout=timeout,
+        )
+
+    async def get_study_to_memory(
+        self,
+        study_uid: str,
+        peer: DicomNode,
+        patient_id: str | None = None,
+        timeout: float = 300.0,
+        on_progress: Callable[[int, int | None], None] | None = None,
+    ) -> RetrieveResult:
+        return await self._retrieve_via_get(
+            level=QueryRetrieveLevel.STUDY,
+            mode=StorageMode.MEMORY,
+            study_uid=study_uid,
+            series_uid=None,
+            peer=peer,
+            output_dir=None,
+            patient_id=patient_id,
+            timeout=timeout,
+            on_progress=on_progress,
+        )
+
+    async def get_series_to_memory(
+        self,
+        study_uid: str,
+        series_uid: str,
+        peer: DicomNode,
+        patient_id: str | None = None,
+        timeout: float = 300.0,
+    ) -> RetrieveResult:
+        return await self._retrieve_via_get(
+            level=QueryRetrieveLevel.SERIES,
+            mode=StorageMode.MEMORY,
+            study_uid=study_uid,
+            series_uid=series_uid,
+            peer=peer,
+            output_dir=None,
+            patient_id=patient_id,
+            timeout=timeout,
         )
