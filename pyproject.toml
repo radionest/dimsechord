@@ -1,6 +1,6 @@
 [project]
 name = "dimsechord"
-version = "0.2.0"
+version = "0.3.0"
 description = "Neutral pure-Python DICOM + DICOMweb core: SCU, C-STORE SCP, cache, AssociationPool, pull-engine."
 requires-python = ">=3.12"
 authors = [{ name = "Denis Nesterov" }]
@@ -8,7 +8,6 @@ dependencies = [
     "pydicom>=2.3.1",
     "pynetdicom>=3.0.4",
     "cachetools>=7.0.0",
-    "pydantic>=2.12.0",
 ]
 
 [dependency-groups]
@@ -36,7 +35,6 @@ select = ["E", "W", "F", "I", "B", "C4", "UP", "ARG", "SIM", "TCH", "DTZ", "Q", 
 
 [tool.mypy]
 python_version = "3.12"
-plugins = ["pydantic.mypy"]
 ignore_missing_imports = true
 
 [[tool.mypy.overrides]]
