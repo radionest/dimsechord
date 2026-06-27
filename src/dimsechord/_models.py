@@ -1,4 +1,4 @@
-"""Pydantic models for DICOM operations.
+"""Dataclass models for DICOM operations.
 
 Only a subset of these models is re-exported from ``dimsechord/__init__.py`` (the
 queries, results, ``DicomNode``, ``QueryRetrieveLevel``). The rest —
@@ -8,11 +8,10 @@ into a consumer, prefer the public façade (``DicomClient`` / ``PullEngine``), o
 extend the public surface, instead of depending on these private types.
 """
 
+from dataclasses import dataclass, field
 from enum import StrEnum
 from pathlib import Path
 from typing import Any
-
-from pydantic import BaseModel, Field
 
 #: DICOM PS3.5 §6.4 value-multiplicity separator used to join multi-valued
 #: ``ModalitiesInStudy`` into a single byte-identical-to-wire string.
@@ -28,7 +27,8 @@ class QueryRetrieveLevel(StrEnum):
     IMAGE = "IMAGE"
 
 
-class StudyQuery(BaseModel):
+@dataclass(slots=True)
+class StudyQuery:
     """Query parameters for C-FIND at study level."""
 
     patient_id: str | None = None
@@ -40,7 +40,8 @@ class StudyQuery(BaseModel):
     modality: str | None = None
 
 
-class SeriesQuery(BaseModel):
+@dataclass(slots=True)
+class SeriesQuery:
     """Query parameters for C-FIND at series level."""
 
     study_instance_uid: str
@@ -50,7 +51,8 @@ class SeriesQuery(BaseModel):
     series_description: str | None = None
 
 
-class ImageQuery(BaseModel):
+@dataclass(slots=True)
+class ImageQuery:
     """Query parameters for C-FIND at image level."""
 
     study_instance_uid: str
@@ -59,25 +61,25 @@ class ImageQuery(BaseModel):
     instance_number: str | None = None
 
 
-class StudyResult(BaseModel):
+@dataclass(slots=True)
+class StudyResult:
     """Study-level C-FIND result."""
 
+    study_instance_uid: str
     patient_id: str | None = None
     patient_name: str | None = None
-    study_instance_uid: str
     study_date: str | None = None
     study_time: str | None = None
     study_description: str | None = None
     accession_number: str | None = None
-    modalities_in_study: str | None = Field(
-        default=None,
-        description="Modalities of the study, DICOM-standard '\\'-joined (e.g. 'CT\\SR').",
-    )
+    # Modalities of the study, DICOM-standard '\'-joined (e.g. 'CT\SR').
+    modalities_in_study: str | None = None
     number_of_study_related_series: int | None = None
     number_of_study_related_instances: int | None = None
 
 
-class SeriesResult(BaseModel):
+@dataclass(slots=True)
+class SeriesResult:
     """Series-level C-FIND result."""
 
     study_instance_uid: str
@@ -88,7 +90,8 @@ class SeriesResult(BaseModel):
     number_of_series_related_instances: int | None = None
 
 
-class ImageResult(BaseModel):
+@dataclass(slots=True)
+class ImageResult:
     """Image-level C-FIND result."""
 
     study_instance_uid: str
@@ -100,7 +103,8 @@ class ImageResult(BaseModel):
     columns: int | None = None
 
 
-class RetrieveRequest(BaseModel):
+@dataclass(slots=True)
+class RetrieveRequest:
     """Request for a C-MOVE operation."""
 
     level: QueryRetrieveLevel
@@ -131,7 +135,8 @@ class StorageMode(StrEnum):
     FORWARD = "forward"
 
 
-class StorageConfig(BaseModel):
+@dataclass(slots=True)
+class StorageConfig:
     """Configuration for storage handler."""
 
     mode: StorageMode
@@ -141,7 +146,8 @@ class StorageConfig(BaseModel):
     destination_port: int | None = None
 
 
-class RetrieveResult(BaseModel):
+@dataclass(slots=True)
+class RetrieveResult:
     """Result of a C-MOVE operation."""
 
     status: str
@@ -149,19 +155,21 @@ class RetrieveResult(BaseModel):
     num_completed: int = 0
     num_failed: int = 0
     num_warning: int = 0
-    failed_sop_instances: list[str] = Field(default_factory=list)
-    instances: dict[str, Any] = Field(default_factory=dict)
+    failed_sop_instances: list[str] = field(default_factory=list)
+    instances: dict[str, Any] = field(default_factory=dict)
 
 
-class BatchStoreResult(BaseModel):
+@dataclass(slots=True)
+class BatchStoreResult:
     """Result of a batch C-STORE operation (one association, multiple datasets)."""
 
     total_sent: int = 0
     total_failed: int = 0
-    failed_sop_uids: list[str] = Field(default_factory=list)
+    failed_sop_uids: list[str] = field(default_factory=list)
 
 
-class DicomNode(BaseModel):
+@dataclass(slots=True)
+class DicomNode:
     """DICOM node configuration."""
 
     aet: str
@@ -169,7 +177,8 @@ class DicomNode(BaseModel):
     port: int
 
 
-class AssociationConfig(BaseModel):
+@dataclass(slots=True)
+class AssociationConfig:
     """Configuration for a DICOM association."""
 
     calling_aet: str
