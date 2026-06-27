@@ -27,7 +27,7 @@ class QueryRetrieveLevel(StrEnum):
     IMAGE = "IMAGE"
 
 
-@dataclass(slots=True)
+@dataclass(slots=True, kw_only=True)
 class StudyQuery:
     """Query parameters for C-FIND at study level."""
 
@@ -40,7 +40,7 @@ class StudyQuery:
     modality: str | None = None
 
 
-@dataclass(slots=True)
+@dataclass(slots=True, kw_only=True)
 class SeriesQuery:
     """Query parameters for C-FIND at series level."""
 
@@ -51,7 +51,7 @@ class SeriesQuery:
     series_description: str | None = None
 
 
-@dataclass(slots=True)
+@dataclass(slots=True, kw_only=True)
 class ImageQuery:
     """Query parameters for C-FIND at image level."""
 
@@ -61,7 +61,7 @@ class ImageQuery:
     instance_number: str | None = None
 
 
-@dataclass(slots=True)
+@dataclass(slots=True, kw_only=True)
 class StudyResult:
     """Study-level C-FIND result."""
 
@@ -78,7 +78,7 @@ class StudyResult:
     number_of_study_related_instances: int | None = None
 
 
-@dataclass(slots=True)
+@dataclass(slots=True, kw_only=True)
 class SeriesResult:
     """Series-level C-FIND result."""
 
@@ -90,7 +90,7 @@ class SeriesResult:
     number_of_series_related_instances: int | None = None
 
 
-@dataclass(slots=True)
+@dataclass(slots=True, kw_only=True)
 class ImageResult:
     """Image-level C-FIND result."""
 
@@ -103,7 +103,7 @@ class ImageResult:
     columns: int | None = None
 
 
-@dataclass(slots=True)
+@dataclass(slots=True, kw_only=True)
 class RetrieveRequest:
     """Request for a C-MOVE operation."""
 
@@ -135,7 +135,7 @@ class StorageMode(StrEnum):
     FORWARD = "forward"
 
 
-@dataclass(slots=True)
+@dataclass(slots=True, kw_only=True)
 class StorageConfig:
     """Configuration for storage handler."""
 
@@ -146,7 +146,7 @@ class StorageConfig:
     destination_port: int | None = None
 
 
-@dataclass(slots=True)
+@dataclass(slots=True, kw_only=True)
 class RetrieveResult:
     """Result of a C-MOVE operation."""
 
@@ -159,7 +159,7 @@ class RetrieveResult:
     instances: dict[str, Any] = field(default_factory=dict)
 
 
-@dataclass(slots=True)
+@dataclass(slots=True, kw_only=True)
 class BatchStoreResult:
     """Result of a batch C-STORE operation (one association, multiple datasets)."""
 
@@ -168,7 +168,7 @@ class BatchStoreResult:
     failed_sop_uids: list[str] = field(default_factory=list)
 
 
-@dataclass(slots=True)
+@dataclass(slots=True, kw_only=True)
 class DicomNode:
     """DICOM node configuration."""
 
@@ -177,7 +177,7 @@ class DicomNode:
     port: int
 
 
-@dataclass(slots=True)
+@dataclass(slots=True, kw_only=True)
 class AssociationConfig:
     """Configuration for a DICOM association."""
 
