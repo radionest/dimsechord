@@ -6,7 +6,8 @@ from pynetdicom.sop_class import (  # type: ignore[attr-defined]
     Verification,
 )
 
-from dimsechord.models import AssociationConfig, SeriesQuery, StudyQuery
+from dimsechord.client import DicomClient
+from dimsechord.models import AssociationConfig, DicomNode, SeriesQuery, StudyQuery
 from dimsechord.scu import DicomOperations
 from tests.fake_pacs import FakePacs
 
@@ -64,3 +65,13 @@ def test_query_dataset_pins_utf8_charset() -> None:
     ops = DicomOperations(calling_aet="X")
     ds = ops._build_study_query_dataset(StudyQuery(patient_name="ИВАНОВ"))
     assert ds.SpecificCharacterSet == "ISO_IR 192"
+
+
+@pytest.mark.timeout(30)
+@pytest.mark.asyncio
+async def test_async_client_find_studies(fake_pacs, seeded_study) -> None:
+    client = DicomClient(calling_aet="ASYNCSCU")
+    peer = DicomNode(aet=fake_pacs.aet, host="127.0.0.1", port=fake_pacs.port)
+    studies = await client.find_studies(StudyQuery(), peer)
+    assert len(studies) == 1
+    assert studies[0].study_instance_uid == seeded_study["study"][0]
