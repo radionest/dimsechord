@@ -1,7 +1,7 @@
 import pytest
 
 from dimsechord.cache import DicomCache
-from dimsechord.exceptions import MoveToSelfError
+from dimsechord.exceptions import AssociationError, MoveToSelfError
 from dimsechord.index import CacheIndex
 from dimsechord.models import DicomNode
 from dimsechord.pool import AssociationPool
@@ -90,3 +90,34 @@ def test_unrouted_destination_raises_move_to_self(engine) -> None:
     # A study UID the PACS has no instances for → C-MOVE completes with 0 sub-ops.
     with pytest.raises(MoveToSelfError):
         list(eng.iter_series("9.9.9.NONEXISTENT", "8.8.8"))
+
+
+@pytest.mark.timeout(30)
+def test_real_move_failure_raises_association_error(free_port, tmp_path) -> None:
+    """A connection-refused failure surfaces as AssociationError, not MoveToSelfError."""
+    dead_port = free_port()
+    scp_port = free_port()
+    pool = AssociationPool(aets=["FAILPOOL"], per_aet_cap=1)
+    scp = StorageSCP()
+    scp.start(aets=["FAILPOOL"], port=scp_port)
+    idx = CacheIndex(str(tmp_path / "index.db"))
+    cache = DicomCache(base_dir=tmp_path / "cache", index=idx)
+    ops = DicomOperations(calling_aet="FAILPOOL")
+    pacs = DicomNode(aet="DEADPACS", host="127.0.0.1", port=dead_port)
+    eng = PullEngine(
+        pool=pool,
+        scp=scp,
+        cache=cache,
+        index=idx,
+        ops=ops,
+        pacs=pacs,
+        cmove_timeout=5.0,
+        arrival_timeout=5.0,
+    )
+    try:
+        with pytest.raises(AssociationError):
+            list(eng.iter_series("9.9.9.DEAD", "8.8.8.DEAD"))
+    finally:
+        scp.stop()
+        cache.shutdown()
+        idx.close()

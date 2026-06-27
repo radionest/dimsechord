@@ -146,9 +146,10 @@ class PullEngine:
     ) -> Iterator[Dataset]:
         session = self._scp.register_session(scp_key)
         collected: dict[str, Dataset] = {}
+        move_error: list[Exception] = []
         move_thread = threading.Thread(
             target=self._drive_move,
-            args=(scp_key, request),
+            args=(scp_key, request, move_error),
             name=f"dimsechord-move-{scp_key}",
             daemon=True,
         )
@@ -172,6 +173,9 @@ class PullEngine:
             move_thread.join(timeout=self._cmove_timeout)
             self._scp.finish_session(scp_key)
 
+        if move_error:
+            raise move_error[0]
+
         if not collected:
             raise MoveToSelfError(
                 f"C-MOVE for {scp_key} completed but no instances arrived — "
@@ -192,7 +196,9 @@ class PullEngine:
                     study_uid, ser_uid, instances, disk_persisted=False
                 )
 
-    def _drive_move(self, scp_key: str, request: RetrieveRequest) -> None:
+    def _drive_move(
+        self, scp_key: str, request: RetrieveRequest, error_holder: list
+    ) -> None:
         try:
             with self._pool.lease(timeout=self._cmove_timeout) as aet:
                 config = AssociationConfig(
@@ -207,6 +213,7 @@ class PullEngine:
                     self._scp.wait_for_completion(scp_key, self._completion_grace)
         except Exception as e:
             logger.error(f"C-MOVE driver failed for {scp_key}: {e}")
+            error_holder.append(e)
         finally:
             self._scp.signal_end(scp_key)
 

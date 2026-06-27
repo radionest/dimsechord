@@ -67,10 +67,10 @@ class StorageHandler:
                 case StorageMode.FORWARD:
                     return self._forward_instance(ds)
                 case _:
-                    logger.error("Unknown storage mode: %s", self.mode)
+                    logger.error(f"Unknown storage mode: {self.mode}")
                     return 0xC000
         except Exception as e:
-            logger.error("Error handling C-STORE: %s", e)
+            logger.error(f"Error handling C-STORE: {e}")
             return 0xC000
 
     def _store_to_disk(self, ds: Dataset) -> int:
@@ -79,10 +79,10 @@ class StorageHandler:
                 return 0xC000
             filepath = self.output_dir / f"{ds.SOPInstanceUID}.dcm"
             ds.save_as(filepath, enforce_file_format=True)
-            logger.debug("Stored instance to %s", filepath)
+            logger.debug(f"Stored instance to {filepath}")
             return 0x0000
         except Exception as e:
-            logger.error("Error storing to disk: %s", e)
+            logger.error(f"Error storing to disk: {e}")
             return 0xC000
 
     def _store_to_memory(self, ds: Dataset) -> int:
@@ -90,7 +90,7 @@ class StorageHandler:
             self.stored_instances[str(ds.SOPInstanceUID)] = ds
             return 0x0000
         except Exception as e:
-            logger.error("Error storing to memory: %s", e)
+            logger.error(f"Error storing to memory: {e}")
             return 0xC000
 
     def _ensure_assoc(self) -> bool:
@@ -110,15 +110,13 @@ class StorageHandler:
                 self.destination_host, self.destination_port, ae_title=self.destination_aet
             )
         except Exception as e:
-            logger.error("Error opening forward association: %s", e)
+            logger.error(f"Error opening forward association: {e}")
             self._assoc = None
             return False
         if not self._assoc.is_established:
             logger.error(
-                "Failed to establish association with %s@%s:%s",
-                self.destination_aet,
-                self.destination_host,
-                self.destination_port,
+                f"Failed to establish association with "
+                f"{self.destination_aet}@{self.destination_host}:{self.destination_port}"
             )
             self._assoc = None
             return False
@@ -130,12 +128,11 @@ class StorageHandler:
         assert self._assoc is not None
         status = self._assoc.send_c_store(ds)
         if status and status.Status == 0x0000:
-            logger.debug("Forwarded instance %s to %s", ds.SOPInstanceUID, self.destination_aet)
+            logger.debug(f"Forwarded instance {ds.SOPInstanceUID} to {self.destination_aet}")
             return 0x0000
         logger.error(
-            "Failed to forward instance %s: status=%s",
-            ds.SOPInstanceUID,
-            status.Status if status else "None",
+            f"Failed to forward instance {ds.SOPInstanceUID}: "
+            f"status={status.Status if status else 'None'}"
         )
         return 0xC000
 

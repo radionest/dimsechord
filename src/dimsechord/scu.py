@@ -64,9 +64,8 @@ def _ds_modalities(ds: Dataset) -> str | None:
     (``"['CT', 'SR']"``) which is unparseable downstream. Joining with
     ``MODALITIES_SEPARATOR`` (the DICOM PS3.5 §6.4 value-multiplicity
     separator) keeps the DB value byte-identical to the wire form, so
-    DICOMweb re-serialisation is a free split. Filesystem path
-    rendering converts to ``_`` separately — see
-    ``storage_paths._modalities_string``.
+    DICOMweb re-serialisation is a free split. Callers that need a
+    filesystem-safe string should convert the separator themselves.
 
     Returns ``None`` on a non-iterable, non-string value rather than
     falling back to ``str(val)`` — the previous fallback wrote
@@ -270,7 +269,7 @@ class DicomOperations:
         return ds
 
     def _build_retrieve_dataset(self, request: RetrieveRequest) -> Dataset:
-        """Build DICOM dataset for C-GET or C-MOVE.
+        """Build DICOM dataset for C-MOVE.
 
         Args:
             request: Retrieve request parameters
@@ -476,9 +475,8 @@ class DicomOperations:
         """
         if not scp.is_running:
             raise RuntimeError(
-                "Storage SCP not running — C-MOVE requires a running SCP. "
-                "Set dicom_retrieve_mode='c-get', start the worker with "
-                "--dicom AET:PORT, or start the API server."
+                "Storage SCP not running — C-MOVE retrieval requires a running Storage SCP "
+                "to receive the moved instances; pass a started StorageSCP to retrieve_via_move."
             )
 
         # Derive session key
