@@ -6,8 +6,11 @@ the surface is a deliberate act: update ``EXPECTED_PUBLIC`` in the same commit.
 """
 
 import importlib
+import threading
 
 import dimsechord
+from dimsechord import DicomClient
+from dimsechord._scu import DicomOperations
 
 # The complete, intended public surface. Keep sorted.
 EXPECTED_PUBLIC = {
@@ -87,3 +90,27 @@ def test_underscore_modules_are_importable_but_marked_private() -> None:
     # their underscore prefix is the signal that they are not the contract.
     mod = importlib.import_module("dimsechord._scu")
     assert mod.__name__ == "dimsechord._scu"
+
+
+def test_set_max_concurrent_associations_is_classmethod() -> None:
+    # Frozen public spelling on the façade; must be a classmethod (configures
+    # process-global state, not per-instance).
+    attr = DicomClient.__dict__["set_max_concurrent_associations"]
+    assert type(attr) is classmethod
+
+
+def test_set_max_concurrent_associations_installs_global_cap() -> None:
+    # Delegates to the private DicomOperations semaphore. Save/restore the
+    # process-global so this test cannot leak a cap into other tests.
+    saved = DicomOperations._association_semaphore
+    try:
+        DicomClient.set_max_concurrent_associations(2)
+        sem = DicomOperations._association_semaphore
+        assert isinstance(sem, threading.Semaphore)
+        assert sem.acquire(blocking=False) is True
+        assert sem.acquire(blocking=False) is True
+        assert sem.acquire(blocking=False) is False  # cap of 2 reached
+        sem.release()
+        sem.release()
+    finally:
+        DicomOperations._association_semaphore = saved

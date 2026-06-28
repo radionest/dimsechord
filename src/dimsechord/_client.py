@@ -43,6 +43,17 @@ class DicomClient:
         self.max_pdu = max_pdu
         self._operations = DicomOperations(calling_aet=calling_aet, max_pdu=max_pdu)
 
+    @classmethod
+    def set_max_concurrent_associations(cls, n: int) -> None:
+        """Set a process-global cap on concurrent DICOM associations.
+
+        Applies to every association — find / get / move / store — including
+        those opened by ``PullEngine`` (the cap is class-level on the shared
+        sync SCU). Distinct from ``AssociationPool``, which gates only C-MOVE
+        AET leases.
+        """
+        DicomOperations.set_association_semaphore(n)
+
     def _create_association_config(
         self, called_aet: str, peer_host: str, peer_port: int, timeout: float = 30.0
     ) -> AssociationConfig:
