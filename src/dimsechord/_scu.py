@@ -167,6 +167,12 @@ class DicomOperations:
             if cx.abstract_syntax is not None:
                 ae.add_requested_context(cx.abstract_syntax)
                 roles.append(build_role(cx.abstract_syntax, scp_role=True))
+        dropped = len(StoragePresentationContexts) - 126
+        if dropped > 0:
+            logger.warning(
+                f"C-GET: {dropped} storage presentation context(s) dropped to fit the "
+                f"DICOM 128-context limit; those SOP classes cannot be retrieved via C-GET."
+            )
         return ae, roles
 
     @contextmanager
@@ -485,6 +491,11 @@ class DicomOperations:
         Symmetric to retrieve_via_move but in-association: no StorageSCP, no pool.
         Handles STUDY and SERIES levels via request.level. MEMORY mode returns the
         instances in result.instances; DISK mode writes them under storage.output_dir.
+
+        Note: in DISK mode instances are written to storage.output_dir and
+        result.instances is left EMPTY — read them back from disk. Only MEMORY
+        mode populates result.instances. This differs from retrieve_via_move, which
+        populates result.instances in both modes.
 
         Raises:
             AssociationError: association fails, or the peer does not accept the

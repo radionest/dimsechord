@@ -21,7 +21,7 @@ from typing import TYPE_CHECKING
 from weakref import WeakValueDictionary
 
 from dimsechord._cache import MemoryCachedSeries
-from dimsechord._exceptions import ArrivalTimeoutError, MoveToSelfError
+from dimsechord._exceptions import ArrivalTimeoutError, AssociationError, MoveToSelfError
 from dimsechord._models import (
     AssociationConfig,
     DicomNode,
@@ -178,6 +178,11 @@ class _CGetTransport:
             timeout=self._cget_timeout,
         )
         result = ops.retrieve_via_get(config, request, StorageConfig(mode=StorageMode.MEMORY))
+        if result.num_failed:
+            raise AssociationError(
+                f"C-GET incomplete: {result.num_failed} sub-operation(s) failed "
+                f"({result.num_completed} completed) — not caching a partial series."
+            )
         yield from result.instances.items()
 
 

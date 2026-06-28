@@ -2,8 +2,11 @@ import pydicom.uid
 import pytest
 
 from dimsechord._cache import DicomCache, MemoryCachedSeries
-from dimsechord._models import DicomNode
+from dimsechord._exceptions import AssociationError
+from dimsechord._models import DicomNode, RetrieveResult
 from dimsechord._pull_engine import PullEngine
+from dimsechord._scu import DicomOperations
+from tests.factories import make_instance
 
 
 @pytest.fixture
@@ -72,3 +75,32 @@ async def test_empty_retrieve_does_not_poison_cache_ensure(cget_engine, seeded_s
     assert isinstance(cached, MemoryCachedSeries)
     assert cached.instances == {}
     assert cache.get_series_from_memory(study, missing_series) is None
+
+
+@pytest.mark.timeout(60)
+def test_partial_cget_does_not_poison_cache(
+    cget_engine, seeded_study, monkeypatch
+) -> None:
+    """A partially-failed C-GET must raise AssociationError and leave the cache clean."""
+    eng, cache = cget_engine
+    study = seeded_study["study"][0]
+    series = seeded_study["series"][0]
+    sop = seeded_study[series][0]
+    partial_instance = make_instance(study, series, sop)
+
+    def _stubbed_retrieve_via_get(_self, _config, _request, _storage, _on_progress=None):
+        return RetrieveResult(
+            status="warning_0xb000",
+            num_completed=1,
+            num_failed=1,
+            instances={sop: partial_instance},
+        )
+
+    monkeypatch.setattr(DicomOperations, "retrieve_via_get", _stubbed_retrieve_via_get)
+
+    with pytest.raises(AssociationError, match="C-GET incomplete"):
+        list(eng.iter_series(study, series))
+
+    cache.flush_pending_writes()
+    assert cache.get_series_from_memory(study, series) is None, "memory cache must be clean"
+    assert cache.series_cached(study, series) is False, "disk cache must be clean"
