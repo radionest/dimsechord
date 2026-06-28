@@ -51,7 +51,12 @@ class DicomClient:
         those opened by ``PullEngine`` (the cap is class-level on the shared
         sync SCU). Distinct from ``AssociationPool``, which gates only C-MOVE
         AET leases.
+
+        Raises ``ValueError`` if ``n`` < 1; ``0`` would install a zero-count
+        semaphore that blocks every association forever.
         """
+        if n < 1:
+            raise ValueError("n must be >= 1")
         DicomOperations.set_association_semaphore(n)
 
     def _create_association_config(

@@ -8,6 +8,8 @@ the surface is a deliberate act: update ``EXPECTED_PUBLIC`` in the same commit.
 import importlib
 import threading
 
+import pytest
+
 import dimsechord
 from dimsechord import DicomClient
 from dimsechord._scu import DicomOperations
@@ -112,5 +114,18 @@ def test_set_max_concurrent_associations_installs_global_cap() -> None:
         assert sem.acquire(blocking=False) is False  # cap of 2 reached
         sem.release()
         sem.release()
+    finally:
+        DicomOperations._association_semaphore = saved
+
+
+def test_set_max_concurrent_associations_rejects_non_positive() -> None:
+    # n < 1 must raise: n=0 would install Semaphore(0) and deadlock every
+    # association. A rejected call must not mutate the process-global.
+    saved = DicomOperations._association_semaphore
+    try:
+        for bad in (0, -1):
+            with pytest.raises(ValueError):
+                DicomClient.set_max_concurrent_associations(bad)
+            assert DicomOperations._association_semaphore is saved
     finally:
         DicomOperations._association_semaphore = saved
