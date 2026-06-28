@@ -1,7 +1,7 @@
 [project]
 name = "dimsechord"
 version = "0.3.0"
-description = "Pure-Python toolkit of composable building blocks for DICOM and DICOMweb services: DIMSE networking (SCU/SCP), association pooling, streaming retrieval, caching, and DICOM↔JSON conversion."
+description = "Pure-Python building blocks for DICOM and DICOMweb services: DIMSE networking, caching, and DICOM↔JSON conversion."
 readme = "README.md"
 license = "MIT"
 license-files = ["LICENSE"]
@@ -15,6 +15,7 @@ classifiers = [
     "Operating System :: OS Independent",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
     "Topic :: Scientific/Engineering :: Medical Science Apps.",
     "Topic :: System :: Networking",
     "Typing :: Typed",
@@ -40,7 +41,7 @@ dev = [
 ]
 
 [build-system]
-requires = ["hatchling"]
+requires = ["hatchling>=1.27"]
 build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]

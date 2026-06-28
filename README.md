@@ -44,4 +44,4 @@ exported, extend the public surface rather than reaching into a private module.
 
 ## License
 
-MIT — see [LICENSE](LICENSE).
+MIT — see [LICENSE](https://github.com/radionest/dimsechord/blob/main/LICENSE).
