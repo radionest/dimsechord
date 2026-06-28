@@ -14,7 +14,7 @@ There is no bundled web framework: you bring your own.
 
 This page walks through the concrete problem each part solves.
 
-## DIMSE boilerplate → a typed client {#dimse-boilerplate}
+## DIMSE boilerplate
 
 A query is one typed call:
 
@@ -31,9 +31,9 @@ raw `Dataset`. The raw-`pynetdicom` equivalent means constructing an `AE`,
 adding the Study Root Find presentation context, associating, looping over
 response identifiers, mapping DICOM keywords to values by hand, and releasing
 the association. `DicomClient` wraps C-FIND, C-STORE, C-MOVE, and C-GET behind
-that one-call shape. See the [cookbook](cookbook.md#query).
+that one-call shape. See the [cookbook](cookbook.md#query-c-find).
 
-## Move-to-self retrieval is hard → PullEngine + StorageSCP {#move-to-self}
+## Move-to-self retrieval
 
 C-MOVE does not return instances to the requester. It tells the PACS to *push*
 them to a named destination AE title. To retrieve to yourself you must:
@@ -47,9 +47,10 @@ them to a named destination AE title. To retrieve to yourself you must:
 `PullEngine` drives all of that and yields instances one by one. If you would
 rather not run an SCP at all, **C-GET** retrieves on a single association —
 `PullEngine.via_cget`, or `DicomClient.get_*`. See
-[retrieve](cookbook.md#retrieve) and [streaming pull](cookbook.md#pull).
+[retrieve](cookbook.md#retrieve-c-move-vs-c-get) and
+[streaming pull](cookbook.md#streaming-pull-with-cache).
 
-## Sync vs async impedance → a sync core with async adapters {#sync-async}
+## Sync vs async impedance
 
 `pynetdicom` is synchronous and thread-based; a web service is `async`.
 dimsechord keeps a synchronous, thread-safe core — so it also works inside a
@@ -57,7 +58,7 @@ DIMSE worker thread, which cannot `await` — and exposes thin `async` adapters 
 top. The HTTP face gets `async for ds in engine.stream_series(...)` without
 re-implementing the thread-to-event-loop bridge.
 
-## Serving retrieved data → cache, JSON, frames {#serving-data}
+## Serving retrieved data
 
 Once instances arrive you usually need to serve them. dimsechord includes:
 
@@ -67,14 +68,15 @@ Once instances arrive you usually need to serve them. dimsechord includes:
   QIDO result converters);
 - **`multipart/related`** frame responses for WADO-RS.
 
-See [JSON](cookbook.md#json) and [frames](cookbook.md#frames).
+See [DICOMweb JSON](cookbook.md#dicomweb-json) and
+[frames](cookbook.md#multipart-frames).
 
-## Multiple AE identities → AssociationPool {#identities}
+## Multiple AE identities
 
 Some deployments rotate among several calling/destination AE titles, each with
 its own concurrency cap. `AssociationPool` leases one identity at a time and
 blocks — or raises — when every slot is busy. See
-[the pool recipe](cookbook.md#pool).
+[the pool recipe](cookbook.md#multiple-ae-identities).
 
 ## What dimsechord is not
 

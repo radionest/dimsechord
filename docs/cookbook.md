@@ -10,17 +10,17 @@ pacs = DicomNode(aet="PACS", host="127.0.0.1", port=11112)
 client = DicomClient(calling_aet="MYSCU")
 ```
 
-- [Query (C-FIND)](#query)
-- [Store to a peer (C-STORE)](#store)
-- [Retrieve (C-MOVE vs C-GET)](#retrieve)
-- [Receive instances (C-STORE SCP)](#receive)
-- [Streaming pull with cache](#pull)
-- [DICOM ↔ DICOMweb JSON](#json)
-- [Multipart frames](#frames)
-- [Multiple AE identities](#pool)
-- [Error handling](#errors)
+- [Query (C-FIND)](#query-c-find)
+- [Store to a peer (C-STORE)](#store-to-a-peer-c-store)
+- [Retrieve (C-MOVE vs C-GET)](#retrieve-c-move-vs-c-get)
+- [Receive instances (C-STORE SCP)](#receive-instances-c-store-scp)
+- [Streaming pull with cache](#streaming-pull-with-cache)
+- [DICOMweb JSON](#dicomweb-json)
+- [Multipart frames](#multipart-frames)
+- [Multiple AE identities](#multiple-ae-identities)
+- [Error handling](#error-handling)
 
-## Query (C-FIND) {#query}
+## Query (C-FIND)
 
 Find studies, then series, then images — each level has its own typed query:
 
@@ -42,7 +42,7 @@ images = await client.find_images(
 `find_studies` returns `list[StudyResult]`, `find_series` returns
 `list[SeriesResult]`, `find_images` returns `list[ImageResult]`.
 
-## Store to a peer (C-STORE) {#store}
+## Store to a peer (C-STORE)
 
 Send one dataset, or a batch over a single association:
 
@@ -59,7 +59,7 @@ print(result.total_sent, result.total_failed, result.failed_sop_uids)
 `store_instance` returns a `bool`; `store_instances_batch` returns a
 `BatchStoreResult` summarizing the batch.
 
-## Retrieve (C-MOVE vs C-GET) {#retrieve}
+## Retrieve (C-MOVE vs C-GET)
 
 C-MOVE asks the PACS to push instances to a destination AE title (a Storage SCP
 you run). C-GET delivers them on the same association, with nothing else to run:
@@ -82,7 +82,7 @@ All three return a `RetrieveResult` (`status`, `num_completed`, `num_failed`,
 C-MOVE when the PACS only supports move, or you want it to push to a separate
 destination.
 
-## Receive instances (C-STORE SCP) {#receive}
+## Receive instances (C-STORE SCP)
 
 `StorageSCP` listens for incoming C-STORE sub-operations. It accepts requests
 addressed to any called AE title, so every AET in a pool routes to it:
@@ -98,10 +98,10 @@ finally:
     scp.stop()
 ```
 
-On its own the SCP just receives; pair it with [`PullEngine`](#pull) to turn
-arrivals into a stream.
+On its own the SCP just receives; pair it with
+[`PullEngine`](#streaming-pull-with-cache) to turn arrivals into a stream.
 
-## Streaming pull with cache {#pull}
+## Streaming pull with cache
 
 `PullEngine` is the move-to-self retrieve path: a cache miss triggers a C-MOVE
 to your `StorageSCP`, and instances are streamed and teed into the cache as they
@@ -138,7 +138,7 @@ cached = await engine.ensure_series(study_uid, series_uid)
 Use `stream_series` / `stream_study` for `async for`, or `ensure_series` to
 materialize the whole series as a `MemoryCachedSeries`.
 
-## DICOM ↔ DICOMweb JSON {#json}
+## DICOMweb JSON
 
 Convert C-FIND results into QIDO-style JSON, or retrieved datasets into WADO-RS
 metadata:
@@ -160,7 +160,7 @@ The result converters (`study_result_to_dicom_json`,
 result object. `convert_datasets_to_dicom_json` and `dataset_to_dicom_json` take
 datasets plus a required `base_url`, used to build bulk-data URIs.
 
-## Multipart frames {#frames}
+## Multipart frames
 
 Extract pixel frames and wrap them in a `multipart/related` body for WADO-RS:
 
@@ -178,7 +178,7 @@ returns its whole pixel data for each requested number; an instance with no
 pixel data returns an empty list. `build_multipart_response` returns
 `(body, content_type)` — hand both straight to your HTTP response.
 
-## Multiple AE identities {#pool}
+## Multiple AE identities
 
 `AssociationPool` leases one of several AE titles, with a per-AET concurrency
 cap:
@@ -197,7 +197,7 @@ except PoolExhaustedError:
 
 `lease` is a context manager: the slot is released when the block exits.
 
-## Error handling {#errors}
+## Error handling
 
 All errors derive from `DimsechordError`, so you can catch the base class or a
 specific failure:

@@ -75,7 +75,7 @@ js: DicomJson = study_result_to_dicom_json(results[0])
 plus an optional `Value`, `BulkDataURI`, or `InlineBinary`. Your type checker
 knows the shape of a DICOMweb response, so building or consuming one is checked.
 
-## The public surface is the stability contract {#stability}
+## The public surface is the stability contract
 
 The supported API is exactly the names in `dimsechord.__all__` — everything you
 can `from dimsechord import`. Modules with a leading underscore

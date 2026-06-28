@@ -141,8 +141,9 @@ app = Starlette(lifespan=lifespan, routes=[
 ## Notes
 
 - The PACS must route the `GWDEST` AET back to the SCP's host and port — see
-  [why move-to-self is hard](why.md#move-to-self).
+  [why move-to-self is hard](why.md#move-to-self-retrieval).
 - For C-GET (no SCP, no routing), build the engine with
-  `PullEngine.via_cget(...)` — see [the pull recipe](cookbook.md#pull).
+  `PullEngine.via_cget(...)` — see
+  [the pull recipe](cookbook.md#streaming-pull-with-cache).
 - For failure modes (`MoveToSelfError`, `ArrivalTimeoutError`, …) see
-  [error handling](cookbook.md#errors).
+  [error handling](cookbook.md#error-handling).
