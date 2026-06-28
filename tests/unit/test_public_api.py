@@ -106,7 +106,7 @@ def test_set_max_concurrent_associations_installs_global_cap() -> None:
     # process-global so this test cannot leak a cap into other tests.
     saved = DicomOperations._association_semaphore
     try:
-        DicomClient.set_max_concurrent_associations(2)
+        DicomClient.set_max_concurrent_associations(max_concurrent=2)
         sem = DicomOperations._association_semaphore
         assert isinstance(sem, threading.Semaphore)
         assert sem.acquire(blocking=False) is True
