@@ -1,9 +1,8 @@
 """Freeze dimsechord's public surface.
 
-The package is consumed by several projects (dicarina, clarinet); the public
-contract is exactly ``dimsechord.__all__``. This test fails on any accidental
-growth or shrinkage so the boundary cannot drift silently. Adding to the
-surface is a deliberate act: update ``EXPECTED_PUBLIC`` in the same commit.
+The public contract is exactly ``dimsechord.__all__``. This test fails on any
+accidental growth or shrinkage so the boundary cannot drift silently. Adding to
+the surface is a deliberate act: update ``EXPECTED_PUBLIC`` in the same commit.
 """
 
 import importlib

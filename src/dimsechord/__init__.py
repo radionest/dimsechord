@@ -1,10 +1,10 @@
-"""dimsechord — neutral pure-Python DICOM + DICOMweb core.
+"""dimsechord — pure-Python DICOM + DICOMweb core.
 
 This module is the **only** public surface. Everything else lives in
 underscore-prefixed modules (``dimsechord._scu``, ``dimsechord._cache``, …)
 and is private: importing from those modules is unsupported and may break
-without notice. The library is consumed by several projects (``dicarina``,
-``clarinet``); keeping the surface small keeps internal refactoring free.
+without notice. Keeping the public surface small keeps internal refactoring
+free.
 
 If something you need is not exported here, extend this surface (add it to a
 private module and re-export it) rather than importing a private symbol.
