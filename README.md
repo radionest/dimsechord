@@ -52,7 +52,7 @@ async def main() -> None:
     series = await client.find_series(
         SeriesQuery(study_instance_uid=studies[0].study_instance_uid), PACS)
 
-    # 2. Pull a series move-to-self, stream it, build DICOMweb JSON (WADO-style).
+    # 2. Pull a series move-to-self and build DICOMweb JSON (WADO-style).
     pool = AssociationPool(aets=["MYDEST"])
     scp = StorageSCP()
     scp.start(aets=pool.aets, port=11113)

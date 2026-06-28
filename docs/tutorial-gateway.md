@@ -70,6 +70,8 @@ from dimsechord import (
 
 
 async def qido_studies(request: Request) -> JSONResponse:
+    # StudyQuery() matches the whole archive — in production, narrow by
+    # date/patient and paginate.
     studies = await gw.client.find_studies(StudyQuery(), PACS)
     return JSONResponse([study_result_to_dicom_json(s) for s in studies])
 

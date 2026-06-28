@@ -40,7 +40,7 @@ loudly rather than silently doing the wrong thing:
 from dimsechord import SeriesQuery
 
 q = SeriesQuery(study_instance_uid="1.2.3", modality="CT")
-# SeriesQuery("1.2.3")             -> TypeError: positional arguments not allowed
+# SeriesQuery("1.2.3")             -> TypeError: takes 1 positional argument but 2 were given
 # SeriesQuery(studyinstanceuid=1)  -> TypeError: unexpected keyword argument 'studyinstanceuid'
 ```
 
