@@ -1,14 +1,34 @@
 [project]
 name = "dimsechord"
 version = "0.3.0"
-description = "Neutral pure-Python DICOM + DICOMweb core: SCU, C-STORE SCP, cache, AssociationPool, pull-engine."
+description = "Pure-Python toolkit of composable building blocks for DICOM and DICOMweb services: DIMSE networking (SCU/SCP), association pooling, streaming retrieval, caching, and DICOM↔JSON conversion."
+readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE"]
 requires-python = ">=3.12"
 authors = [{ name = "Denis Nesterov" }]
+keywords = ["dicom", "dicomweb", "pacs", "pynetdicom", "pydicom", "dimse", "wado", "medical-imaging"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Healthcare Industry",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Scientific/Engineering :: Medical Science Apps.",
+    "Topic :: System :: Networking",
+    "Typing :: Typed",
+]
 dependencies = [
     "pydicom>=2.3.1",
     "pynetdicom>=3.0.4",
     "cachetools>=7.0.0",
 ]
+
+[project.urls]
+Homepage = "https://github.com/radionest/dimsechord"
+Repository = "https://github.com/radionest/dimsechord"
+Issues = "https://github.com/radionest/dimsechord/issues"
 
 [dependency-groups]
 dev = [

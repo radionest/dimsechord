@@ -1,7 +1,7 @@
 """Synchronous DICOM operations using pynetdicom (C-FIND / C-MOVE / C-STORE)."""
 
 # Internal API — NOT part of dimsechord's public surface (see ``dimsechord/__init__.py``).
-# Before importing ``DicomOperations`` into a consumer (dicarina / clarinet), stop and
+# Before importing ``DicomOperations`` into a consumer, stop and
 # reconsider: the public façade — ``DicomClient`` (async C-FIND / C-STORE / C-MOVE) and
 # ``PullEngine`` (move-to-self retrieval) — is meant to cover every supported use case.
 # If it genuinely does not, EXTEND the public surface (add a method/function and export
