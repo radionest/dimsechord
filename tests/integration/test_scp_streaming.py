@@ -6,11 +6,54 @@ from dimsechord._scp import StorageSCP
 from tests.factories import make_instance
 
 
+def test_scp_binds_distinct_port_per_aet(free_port, seeded_study) -> None:
+    """Each AET listens on its own port; a C-STORE to one port still routes by UID."""
+    scp = StorageSCP()
+    port_a, port_b = free_port(), free_port()
+    scp.start({"DESTA": port_a, "DESTB": port_b}, ip="127.0.0.1")
+    study = seeded_study["study"][0]
+    series = seeded_study["series"][0]
+    session = scp.register_session(f"{study}/{series}")
+    inst = make_instance(study, series, seeded_study[series][0])
+    try:
+        ae = AE(ae_title="SENDER")
+        ae.add_requested_context(MRImageStorage)
+        # Address the AET bound on the SECOND port; connect to that port.
+        assoc = ae.associate("127.0.0.1", port_b, ae_title="DESTB")
+        assert assoc.is_established
+        try:
+            assert assoc.send_c_store(inst).Status == 0x0000
+        finally:
+            assoc.release()
+        sop_uid, _ds = session.queue.get(timeout=10)
+        assert sop_uid == seeded_study[series][0]
+        assert session.received_count == 1
+    finally:
+        scp.stop()
+
+
+def test_start_empty_bindings_raises() -> None:
+    scp = StorageSCP()
+    with pytest.raises(ValueError):
+        scp.start({})
+
+
+def test_double_start_is_ignored(free_port) -> None:
+    scp = StorageSCP()
+    scp.start({"DEST": free_port()})
+    try:
+        scp.start({"DEST2": free_port()})  # already running → warn + return
+        assert scp.is_running
+        assert len(scp._servers) == 1  # white-box: second start bound nothing
+    finally:
+        scp.stop()
+
+
 @pytest.fixture
 def running_scp(free_port):
     scp = StorageSCP()
     port = free_port()
-    scp.start(aets=["DEST1", "DEST2"], port=port)
+    scp.start({"DEST1": port, "DEST2": port})
     try:
         yield scp, port
     finally:

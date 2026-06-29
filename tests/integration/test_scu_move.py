@@ -18,7 +18,7 @@ def test_move_study_to_external_scp(fake_pacs, seeded_study, free_port) -> None:
     dest_aet = "EXTDEST"
     dest_port = free_port()
     scp = StorageSCP()
-    scp.start(aets=dest_aet, port=dest_port)
+    scp.start({dest_aet: dest_port})
     fake_pacs.register_destination(dest_aet, "127.0.0.1", dest_port)
 
     study = seeded_study["study"][0]
@@ -62,7 +62,7 @@ def test_retrieve_via_move(fake_pacs, seeded_study, free_port) -> None:
     dest_aet = "RVMDEST"
     dest_port = free_port()
     scp = StorageSCP()
-    scp.start(aets=dest_aet, port=dest_port)
+    scp.start({dest_aet: dest_port})
     fake_pacs.register_destination(dest_aet, "127.0.0.1", dest_port)
 
     study = seeded_study["study"][0]
