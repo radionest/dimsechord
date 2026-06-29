@@ -37,7 +37,7 @@ class Gateway:
         self.engine: PullEngine | None = None
 
     def start(self) -> None:
-        self.scp.start(aets=self.pool.aets, port=11113)
+        self.scp.start({"GWDEST": 11113})
         self.engine = PullEngine(
             pool=self.pool, scp=self.scp, cache=self.cache, pacs=PACS)
 

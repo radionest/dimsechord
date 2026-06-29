@@ -91,7 +91,7 @@ addressed to any called AE title, so every AET in a pool routes to it:
 from dimsechord import StorageSCP
 
 scp = StorageSCP()
-scp.start(aets="MYDEST", port=11113)
+scp.start({"MYDEST": 11113})
 try:
     ...  # the SCP feeds per-request queues; drive it with PullEngine (next recipe)
 finally:
@@ -112,7 +112,7 @@ from dimsechord import AssociationPool, DicomCache, PullEngine, StorageSCP
 
 pool = AssociationPool(aets=["MYDEST"])
 scp = StorageSCP()
-scp.start(aets=pool.aets, port=11113)
+scp.start({"MYDEST": 11113})
 # The PACS must be configured to route the AET "MYDEST" back to this SCP's host:port.
 cache = DicomCache(base_dir="/var/cache/dimsechord",
                    index_path="/var/cache/dimsechord/index.db")
