@@ -29,7 +29,7 @@ def test_strict_pacs_rejects_unregistered_calling_aet(free_port) -> None:
         pacs.stop()
 
 
-@pytest.mark.timeout(120)
+@pytest.mark.timeout(60)
 def test_pool_three_aets_each_on_own_port(free_port, tmp_path) -> None:
     """3 pooled AETs, each on its own port; strict PACS routes each AET -> its port."""
     aets = ["DESTA", "DESTB", "DESTC"]

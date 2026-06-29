@@ -41,6 +41,7 @@ class StorageSCP:
 
     def __init__(self) -> None:
         self._servers: list[Any] = []
+        self._aes: list[Any] = []
         self._sessions: dict[str, MoveSession] = {}
         self._lock = threading.Lock()
 
@@ -71,21 +72,30 @@ class StorageSCP:
             by_port.setdefault(port, []).append(aet)
 
         handlers = [(evt.EVT_C_STORE, self._handle_store)]
-        for port, aets in by_port.items():
-            ae = AE(ae_title=aets[0])
-            ae.require_called_aet = False
-            for ctx in StoragePresentationContexts:
-                if ctx.abstract_syntax is not None:
-                    ae.add_supported_context(ctx.abstract_syntax)
-            ae.add_supported_context(Verification)
-            server = ae.start_server((ip, port), evt_handlers=handlers, block=False)  # type: ignore[arg-type]
-            self._servers.append(server)
-            logger.info(f"Storage SCP listening on {ip}:{port} (AETs: {aets})")
+        try:
+            for port, aets in by_port.items():
+                ae = AE(ae_title=aets[0])
+                ae.require_called_aet = False
+                for ctx in StoragePresentationContexts:
+                    if ctx.abstract_syntax is not None:
+                        ae.add_supported_context(ctx.abstract_syntax)
+                ae.add_supported_context(Verification)
+                server = ae.start_server((ip, port), evt_handlers=handlers, block=False)  # type: ignore[arg-type]
+                self._servers.append(server)
+                self._aes.append(ae)
+                logger.info(f"Storage SCP listening on {ip}:{port} (AETs: {aets})")
+        except Exception:
+            for server in self._servers:
+                server.shutdown()
+            self._servers.clear()
+            self._aes.clear()
+            raise
 
     def stop(self) -> None:
         for server in self._servers:
             server.shutdown()
         self._servers.clear()
+        self._aes.clear()
         with self._lock:
             for session in self._sessions.values():
                 session.ended = True
