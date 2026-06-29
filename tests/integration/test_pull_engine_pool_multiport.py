@@ -64,6 +64,12 @@ def test_pool_three_aets_each_on_own_port(free_port, tmp_path) -> None:
         for s in series:
             received = list(eng.iter_series(study, s))
             assert {str(ds.SOPInstanceUID) for ds in received} == set(sops[s])
+
+        # Payload correctness alone would also pass if the pool always leased the
+        # same AET; assert the round-robin actually exercised every AET/port binding.
+        assert len(pacs.moves) == len(series)
+        assert {aet for aet, _ in pacs.moves} == set(aets)
+        assert {port for _, port in pacs.moves} == set(ports.values())
     finally:
         scp.stop()
         cache.shutdown()

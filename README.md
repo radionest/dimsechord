@@ -14,7 +14,7 @@ handlers, so you bring your own web layer.
 - **DIMSE SCU** — C-FIND, C-STORE, C-MOVE and C-GET, exposed through an async
   `DicomClient`.
 - **C-STORE SCP** — receive incoming instances with `StorageSCP`, one listener
-  per port so each pool AET can bind its own endpoint.
+  per distinct port; multiple AETs may share a port.
 - **AssociationPool** — manage multiple AE-Title identities with per-AET
   concurrency limits.
 - **Two-tier cache** — in-memory + disk, backed by a SQLite instance index.
