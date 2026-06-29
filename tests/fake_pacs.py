@@ -38,8 +38,10 @@ class FakePacs:
         self._destinations[aet] = (host, port)
 
     # ── lifecycle ────────────────────────────────────────────────
-    def start(self, port: int) -> None:
+    def start(self, port: int, require_calling_aets: list[str] | None = None) -> None:
         ae = AE(ae_title=self.aet)
+        if require_calling_aets is not None:
+            ae.require_calling_aet = list(require_calling_aets)
         ae.add_supported_context(PatientRootQueryRetrieveInformationModelFind)
         ae.add_supported_context(StudyRootQueryRetrieveInformationModelFind)
         ae.add_supported_context(PatientRootQueryRetrieveInformationModelMove)
