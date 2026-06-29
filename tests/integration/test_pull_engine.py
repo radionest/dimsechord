@@ -13,7 +13,7 @@ def engine(fake_pacs, free_port, tmp_path):
     scp_port = free_port()
     pool = AssociationPool(aets=["DESTPOOL"], per_aet_cap=1)
     scp = StorageSCP()
-    scp.start(aets=pool.aets, port=scp_port)
+    scp.start(dict.fromkeys(pool.aets, scp_port))
     # The fake PACS must know where to route DESTPOOL (our SCP).
     fake_pacs.register_destination("DESTPOOL", "127.0.0.1", scp_port)
 
@@ -94,7 +94,7 @@ def test_real_move_failure_raises_association_error(free_port, tmp_path) -> None
     scp_port = free_port()
     pool = AssociationPool(aets=["FAILPOOL"], per_aet_cap=1)
     scp = StorageSCP()
-    scp.start(aets=["FAILPOOL"], port=scp_port)
+    scp.start({"FAILPOOL": scp_port})
     cache = DicomCache(base_dir=tmp_path / "cache", index_path=tmp_path / "index.db")
     pacs = DicomNode(aet="DEADPACS", host="127.0.0.1", port=dead_port)
     eng = PullEngine(

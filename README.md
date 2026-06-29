@@ -13,7 +13,8 @@ handlers, so you bring your own web layer.
 
 - **DIMSE SCU** — C-FIND, C-STORE, C-MOVE and C-GET, exposed through an async
   `DicomClient`.
-- **C-STORE SCP** — receive incoming instances with `StorageSCP`.
+- **C-STORE SCP** — receive incoming instances with `StorageSCP`, one listener
+  per distinct port; multiple AETs may share a port.
 - **AssociationPool** — manage multiple AE-Title identities with per-AET
   concurrency limits.
 - **Two-tier cache** — in-memory + disk, backed by a SQLite instance index.
@@ -55,7 +56,7 @@ async def main() -> None:
     # 2. Pull a series move-to-self and build DICOMweb JSON (WADO-style).
     pool = AssociationPool(aets=["MYDEST"])
     scp = StorageSCP()
-    scp.start(aets=pool.aets, port=11113)
+    scp.start({"MYDEST": 11113})
     # Your PACS must route the AET "MYDEST" back to this SCP's host:port.
     cache = DicomCache(base_dir="./cache", index_path="./cache/index.db")
     engine = PullEngine(pool=pool, scp=scp, cache=cache, pacs=PACS)
@@ -72,6 +73,9 @@ async def main() -> None:
 
 asyncio.run(main())
 ```
+
+> **0.4.0 (breaking):** `StorageSCP.start` now takes an `{AET: port}` mapping
+> (was `start(aets, port)`), binding one listener per port.
 
 ## Public API
 

@@ -28,6 +28,7 @@ class FakePacs:
         self._instances: list[Dataset] = []
         self._destinations: dict[str, tuple[str, int]] = {}
         self._server: object | None = None
+        self.moves: list[tuple[str, int]] = []
 
     # ── seeding ──────────────────────────────────────────────────
     def add_instance(self, ds: Dataset) -> None:
@@ -38,8 +39,10 @@ class FakePacs:
         self._destinations[aet] = (host, port)
 
     # ── lifecycle ────────────────────────────────────────────────
-    def start(self, port: int) -> None:
+    def start(self, port: int, require_calling_aets: list[str] | None = None) -> None:
         ae = AE(ae_title=self.aet)
+        if require_calling_aets is not None:
+            ae.require_calling_aet = list(require_calling_aets)
         ae.add_supported_context(PatientRootQueryRetrieveInformationModelFind)
         ae.add_supported_context(StudyRootQueryRetrieveInformationModelFind)
         ae.add_supported_context(PatientRootQueryRetrieveInformationModelMove)
@@ -152,6 +155,7 @@ class FakePacs:
         if dest is None:
             yield (None, None)  # unknown move destination → 0xA801
             return
+        self.moves.append((dest_aet, dest[1]))  # record the AET/port actually routed
         yield (dest[0], dest[1])  # 1st yield: destination (addr, port)
         matches = self._match(event.identifier)
         yield len(matches)  # 2nd yield: number of C-STORE sub-operations

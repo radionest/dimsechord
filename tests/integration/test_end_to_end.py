@@ -28,7 +28,7 @@ async def test_qido_then_wado_then_cross_face_hit(fake_pacs, seeded_study, free_
     scp_port = free_port()
     pool = AssociationPool(aets=["E2EDEST"])
     scp = StorageSCP()
-    scp.start(aets=pool.aets, port=scp_port)
+    scp.start(dict.fromkeys(pool.aets, scp_port))
     fake_pacs.register_destination("E2EDEST", "127.0.0.1", scp_port)
     cache = DicomCache(base_dir=tmp_path / "c", index_path=tmp_path / "i.db")
     engine = PullEngine(pool=pool, scp=scp, cache=cache, pacs=peer,

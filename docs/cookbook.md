@@ -91,7 +91,7 @@ addressed to any called AE title, so every AET in a pool routes to it:
 from dimsechord import StorageSCP
 
 scp = StorageSCP()
-scp.start(aets="MYDEST", port=11113)
+scp.start({"MYDEST": 11113})
 try:
     ...  # the SCP feeds per-request queues; drive it with PullEngine (next recipe)
 finally:
@@ -112,7 +112,7 @@ from dimsechord import AssociationPool, DicomCache, PullEngine, StorageSCP
 
 pool = AssociationPool(aets=["MYDEST"])
 scp = StorageSCP()
-scp.start(aets=pool.aets, port=11113)
+scp.start({aet: 11113 for aet in pool.aets})
 # The PACS must be configured to route the AET "MYDEST" back to this SCP's host:port.
 cache = DicomCache(base_dir="/var/cache/dimsechord",
                    index_path="/var/cache/dimsechord/index.db")
@@ -137,6 +137,17 @@ cached = await engine.ensure_series(study_uid, series_uid)
 
 Use `stream_series` / `stream_study` for `async for`, or `ensure_series` to
 materialize the whole series as a `MemoryCachedSeries`.
+
+### Multi-port: one endpoint per AET
+
+Real PACS systems often require each registered AE title to have its own
+distinct host:port. Bind one listener per AET by giving each a different port:
+
+```python
+pool = AssociationPool(aets=["DEST_A", "DEST_B"])
+scp = StorageSCP()
+scp.start({"DEST_A": 11113, "DEST_B": 11114})  # one listener per AET
+```
 
 ## DICOMweb JSON
 

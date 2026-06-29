@@ -12,6 +12,8 @@ from pynetdicom import AE, StoragePresentationContexts, evt
 from pynetdicom.sop_class import Verification  # type: ignore[attr-defined]
 
 if TYPE_CHECKING:
+    from collections.abc import Mapping
+
     from pydicom import Dataset
 
 logger = logging.getLogger(__name__)
@@ -38,49 +40,62 @@ class StorageSCP:
     """Persistent pynetdicom Storage SCP that feeds per-session streaming queues."""
 
     def __init__(self) -> None:
-        self._server: Any | None = None
+        self._servers: list[Any] = []
+        self._aes: list[Any] = []
         self._sessions: dict[str, MoveSession] = {}
         self._lock = threading.Lock()
 
     @property
     def is_running(self) -> bool:
-        return self._server is not None
+        return bool(self._servers)
 
     # ── Lifecycle ──────────────────────────────────────────────────
-    def start(self, aets: list[str] | str, port: int, ip: str | None = None) -> None:
-        """Start the Storage SCP in a background thread.
+    def start(self, bindings: Mapping[str, int], ip: str = "0.0.0.0") -> None:
+        """Start one Storage SCP listener per distinct port, in background threads.
 
         Args:
-            aets: One AET (str) or the pool's AETs (list). The server binds the
-                first as its primary title and accepts C-STORE addressed to any
-                AET (``require_called_aet = False``), so every pool AET routes here.
-            port: TCP port to bind.
-            ip: Bind IP (default: all interfaces).
+            bindings: AET → port map. Several AETs may share a port; the SCP
+                binds one server per distinct port (the first AET on a port is
+                its primary title) with ``require_called_aet = False``, so any
+                AET routes here. Inbound C-STORE is dispatched by Study/Series
+                UID across the shared session registry, regardless of port.
+            ip: Bind interface for every listener (default: all interfaces).
         """
-        if self._server is not None:
+        if self._servers:
             logger.warning("Storage SCP already running, skipping start")
             return
+        if not bindings:
+            raise ValueError("StorageSCP.start requires at least one (AET, port) binding")
 
-        aet_list = [aets] if isinstance(aets, str) else list(aets)
-        if not aet_list:
-            raise ValueError("StorageSCP.start requires at least one AET")
-
-        ae = AE(ae_title=aet_list[0])
-        ae.require_called_aet = False
-        for ctx in StoragePresentationContexts:
-            if ctx.abstract_syntax is not None:
-                ae.add_supported_context(ctx.abstract_syntax)
-        ae.add_supported_context(Verification)
+        by_port: dict[int, list[str]] = {}
+        for aet, port in bindings.items():
+            by_port.setdefault(port, []).append(aet)
 
         handlers = [(evt.EVT_C_STORE, self._handle_store)]
-        bind_address = (ip or "0.0.0.0", port)
-        self._server = ae.start_server(bind_address, evt_handlers=handlers, block=False)  # type: ignore[arg-type]
-        logger.info(f"Storage SCP started on {bind_address[0]}:{port} (AETs: {aet_list})")
+        try:
+            for port, aets in by_port.items():
+                ae = AE(ae_title=aets[0])
+                ae.require_called_aet = False
+                for ctx in StoragePresentationContexts:
+                    if ctx.abstract_syntax is not None:
+                        ae.add_supported_context(ctx.abstract_syntax)
+                ae.add_supported_context(Verification)
+                server = ae.start_server((ip, port), evt_handlers=handlers, block=False)  # type: ignore[arg-type]
+                self._servers.append(server)
+                self._aes.append(ae)
+                logger.info(f"Storage SCP listening on {ip}:{port} (AETs: {aets})")
+        except Exception:
+            for server in self._servers:
+                server.shutdown()
+            self._servers.clear()
+            self._aes.clear()
+            raise
 
     def stop(self) -> None:
-        if self._server is not None:
-            self._server.shutdown()
-            self._server = None
+        for server in self._servers:
+            server.shutdown()
+        self._servers.clear()
+        self._aes.clear()
         with self._lock:
             for session in self._sessions.values():
                 session.ended = True
