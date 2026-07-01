@@ -68,6 +68,45 @@ def _ds_int(ds: Dataset, attr: str) -> int | None:
     return int(val)
 
 
+def _ds_float(ds: Dataset, attr: str) -> float | None:
+    """Get a DICOM attribute as a float (DS decimal).
+
+    Returns ``None`` for a missing/empty value. Non-numeric DS values log a
+    warning and return ``None`` rather than raising — slice thickness and
+    similar DS fields are best-effort metadata, never worth aborting a parse.
+    """
+    val: Any = getattr(ds, attr, None)
+    if val is None or val == "":
+        return None
+    try:
+        return float(val)
+    except (TypeError, ValueError):
+        logger.warning(f"_ds_float: {attr} is not numeric ({val!r}); returning None")
+        return None
+
+
+def _ds_str_list(ds: Dataset, attr: str) -> list[str] | None:
+    """Get a multi-valued DICOM attribute as ``list[str]``.
+
+    For tags like ``SOPClassesInStudy`` / ``ImageType``: pydicom returns a
+    ``MultiValue`` (or a plain ``str`` for a single value). Unlike
+    ``_ds_modalities`` this keeps the list form — these tags are not
+    DB-indexed, so there is no ``\\``-joined wire-form constraint. Returns
+    ``None`` for a missing/empty/non-iterable value.
+    """
+    val: Any = getattr(ds, attr, None)
+    if val is None or val == "":
+        return None
+    if isinstance(val, str):
+        return [val]
+    try:
+        items = [str(v) for v in val]
+    except TypeError:
+        logger.warning(f"_ds_str_list: {attr} is not iterable ({val!r}); returning None")
+        return None
+    return items or None
+
+
 def _ds_modalities(ds: Dataset) -> str | None:
     """Get ``ModalitiesInStudy`` as a DICOM ``\\``-joined string.
 
@@ -245,6 +284,15 @@ class DicomOperations:
                 "StudyTime": None,
                 "NumberOfStudyRelatedSeries": None,
                 "NumberOfStudyRelatedInstances": None,
+                # Request the extended standard fields upstream — a standard
+                # SCP only returns attributes present in the query identifier.
+                "PatientBirthDate": None,
+                "PatientSex": None,
+                "StudyID": None,
+                "ReferringPhysicianName": None,
+                "InstitutionName": None,
+                "StationName": None,
+                "SOPClassesInStudy": None,
             },
         )
 
@@ -272,6 +320,11 @@ class DicomOperations:
                 "Modality": query.modality,
                 "SeriesDescription": query.series_description,
                 "NumberOfSeriesRelatedInstances": None,
+                "BodyPartExamined": None,
+                "ProtocolName": None,
+                "SeriesDate": None,
+                "OperatorName": None,
+                "PerformedProcedureStepDescription": None,
             },
         )
 
@@ -298,6 +351,9 @@ class DicomOperations:
                 "SOPInstanceUID": query.sop_instance_uid,
                 "InstanceNumber": query.instance_number,
                 "SOPClassUID": None,
+                "ImageType": None,
+                "ContentDate": None,
+                "SliceThickness": None,
             },
         )
         ds.Rows = None
@@ -796,6 +852,13 @@ class DicomOperations:
             modalities_in_study=_ds_modalities(ds),
             number_of_study_related_series=_ds_int(ds, "NumberOfStudyRelatedSeries"),
             number_of_study_related_instances=_ds_int(ds, "NumberOfStudyRelatedInstances"),
+            patient_birth_date=_ds_str(ds, "PatientBirthDate"),
+            patient_sex=_ds_str(ds, "PatientSex"),
+            study_id=_ds_str(ds, "StudyID"),
+            referring_physician_name=_ds_str(ds, "ReferringPhysicianName"),
+            institution_name=_ds_str(ds, "InstitutionName"),
+            station_name=_ds_str(ds, "StationName"),
+            sop_classes_in_study=_ds_str_list(ds, "SOPClassesInStudy"),
         )
 
     def _parse_series_result(self, ds: Dataset) -> SeriesResult:
@@ -815,6 +878,13 @@ class DicomOperations:
             modality=_ds_str(ds, "Modality"),
             series_description=_ds_str(ds, "SeriesDescription"),
             number_of_series_related_instances=_ds_int(ds, "NumberOfSeriesRelatedInstances"),
+            body_part_examined=_ds_str(ds, "BodyPartExamined"),
+            protocol_name=_ds_str(ds, "ProtocolName"),
+            series_date=_ds_str(ds, "SeriesDate"),
+            operator_name=_ds_str(ds, "OperatorName"),
+            performed_procedure_step_description=_ds_str(
+                ds, "PerformedProcedureStepDescription"
+            ),
         )
 
     def _parse_image_result(self, ds: Dataset) -> ImageResult:
@@ -835,4 +905,7 @@ class DicomOperations:
             instance_number=_ds_int(ds, "InstanceNumber"),
             rows=_ds_int(ds, "Rows"),
             columns=_ds_int(ds, "Columns"),
+            image_type=_ds_str_list(ds, "ImageType"),
+            content_date=_ds_str(ds, "ContentDate"),
+            slice_thickness=_ds_float(ds, "SliceThickness"),
         )
