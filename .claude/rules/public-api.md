@@ -10,12 +10,17 @@ Every other module is private:
 - A leading underscore in the filename (`_scu.py`, `_client.py`,
   `_handlers.py`, `_models.py`, ...) means importing it directly is
   unsupported and may break without notice — several of these modules say
-  so explicitly in their own docstrings (e.g. `_scu.py`, `_handlers.py`).
-- The public façade is two entry points: `DicomClient` (async C-FIND /
-  C-STORE / C-MOVE) and `PullEngine` (move-to-self / C-GET retrieval). If
-  a use case genuinely isn't covered by them, **extend** `__init__.py`'s
-  exports — add a method/function to a private module and re-export it —
-  rather than importing the private module directly.
+  so explicitly, as a top-of-file comment in `_scu.py`/`_handlers.py`, or
+  in the module docstring in `_models.py`.
+- The public surface centers on two orchestration entry points —
+  `DicomClient` (async C-FIND / C-STORE / C-MOVE / C-GET) and
+  `PullEngine` (move-to-self / C-GET retrieval) — plus
+  directly-constructed building blocks (`StorageSCP`, `AssociationPool`,
+  `DicomCache`) and standalone converter/multipart utilities, all
+  re-exported from `__init__.py`. If a use case genuinely isn't covered
+  by any of them, **extend** `__init__.py`'s exports — add a
+  method/function to a private module and re-export it — rather than
+  importing the private module directly.
 
 ## Do not import directly
 

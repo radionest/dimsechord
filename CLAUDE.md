@@ -6,8 +6,8 @@
   all other modules are private (`_`-prefixed, unsupported to import
   directly)
 - `.claude/rules/` — DICOM/DIMSE domain, public API convention,
-  concurrency model, DICOMweb conversion — auto-loaded by path when
-  touching `src/dimsechord/**`
+  concurrency model, DICOMweb conversion — each auto-loaded by path when
+  touching the specific `src/dimsechord/**` files it's scoped to
 - `docs/` — user-facing guides (why, typing, cookbook, gateway tutorial)
 
 ## Development
