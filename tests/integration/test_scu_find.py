@@ -7,8 +7,9 @@ from pynetdicom.sop_class import (  # type: ignore[attr-defined]
 )
 
 from dimsechord._client import DicomClient
-from dimsechord._models import AssociationConfig, DicomNode, SeriesQuery, StudyQuery
+from dimsechord._models import AssociationConfig, DicomNode, ImageQuery, SeriesQuery, StudyQuery
 from dimsechord._scu import DicomOperations
+from tests.factories import make_instance
 from tests.fake_pacs import FakePacs
 
 
@@ -75,3 +76,95 @@ async def test_async_client_find_studies(fake_pacs, seeded_study) -> None:
     studies = await client.find_studies(StudyQuery(), peer)
     assert len(studies) == 1
     assert studies[0].study_instance_uid == seeded_study["study"][0]
+
+
+@pytest.mark.timeout(30)
+def test_scu_find_round_trips_extended_study_fields(free_port) -> None:
+    pacs = FakePacs(aet="FAKEPACS")
+    ds = make_instance("1.2.3", "1.2.3.4", "1.2.3.4.1")
+    ds.PatientBirthDate = "19700101"
+    ds.PatientSex = "M"
+    ds.StudyID = "S1"
+    ds.ReferringPhysicianName = "SMITH^JOHN"
+    ds.InstitutionName = "HOSP"
+    ds.StationName = "STN1"
+    ds.SOPClassesInStudy = ["1.2.840.10008.5.1.4.1.1.4"]
+    pacs.add_instance(ds)
+    port = free_port()
+    pacs.start(port)
+    pacs.port = port
+    try:
+        ops = DicomOperations(calling_aet="TESTSCU")
+        cfg = AssociationConfig(
+            calling_aet="TESTSCU", called_aet=pacs.aet, peer_host="127.0.0.1", peer_port=port
+        )
+        studies = ops.find_studies(cfg, StudyQuery())
+        assert len(studies) == 1
+        s = studies[0]
+        assert s.patient_birth_date == "19700101"
+        assert s.patient_sex == "M"
+        assert s.study_id == "S1"
+        assert s.referring_physician_name == "SMITH^JOHN"
+        assert s.institution_name == "HOSP"
+        assert s.station_name == "STN1"
+        assert s.sop_classes_in_study == ["1.2.840.10008.5.1.4.1.1.4"]
+    finally:
+        pacs.stop()
+
+
+@pytest.mark.timeout(30)
+def test_scu_find_round_trips_extended_series_fields(free_port) -> None:
+    pacs = FakePacs(aet="FAKEPACS")
+    ds = make_instance("1.2.3", "1.2.3.4", "1.2.3.4.1")
+    ds.BodyPartExamined = "BRAIN"
+    ds.ProtocolName = "PROT1"
+    ds.SeriesDate = "20200101"
+    ds.OperatorsName = "OPER^X"
+    ds.PerformedProcedureStepDescription = "PPS desc"
+    pacs.add_instance(ds)
+    port = free_port()
+    pacs.start(port)
+    pacs.port = port
+    try:
+        ops = DicomOperations(calling_aet="TESTSCU")
+        cfg = AssociationConfig(
+            calling_aet="TESTSCU", called_aet=pacs.aet, peer_host="127.0.0.1", peer_port=port
+        )
+        series = ops.find_series(cfg, SeriesQuery(study_instance_uid="1.2.3"))
+        assert len(series) == 1
+        sr = series[0]
+        assert sr.body_part_examined == "BRAIN"
+        assert sr.protocol_name == "PROT1"
+        assert sr.series_date == "20200101"
+        assert sr.operator_name == "OPER^X"
+        assert sr.performed_procedure_step_description == "PPS desc"
+    finally:
+        pacs.stop()
+
+
+@pytest.mark.timeout(30)
+def test_scu_find_round_trips_extended_image_fields(free_port) -> None:
+    pacs = FakePacs(aet="FAKEPACS")
+    ds = make_instance("1.2.3", "1.2.3.4", "1.2.3.4.1")
+    ds.ImageType = ["ORIGINAL", "PRIMARY"]
+    ds.ContentDate = "20200101"
+    ds.SliceThickness = 2.5
+    pacs.add_instance(ds)
+    port = free_port()
+    pacs.start(port)
+    pacs.port = port
+    try:
+        ops = DicomOperations(calling_aet="TESTSCU")
+        cfg = AssociationConfig(
+            calling_aet="TESTSCU", called_aet=pacs.aet, peer_host="127.0.0.1", peer_port=port
+        )
+        images = ops.find_images(
+            cfg, ImageQuery(study_instance_uid="1.2.3", series_instance_uid="1.2.3.4")
+        )
+        assert len(images) == 1
+        im = images[0]
+        assert im.image_type == ["ORIGINAL", "PRIMARY"]
+        assert im.content_date == "20200101"
+        assert im.slice_thickness == 2.5
+    finally:
+        pacs.stop()

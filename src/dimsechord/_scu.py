@@ -323,7 +323,7 @@ class DicomOperations:
                 "BodyPartExamined": None,
                 "ProtocolName": None,
                 "SeriesDate": None,
-                "OperatorName": None,
+                "OperatorsName": None,
                 "PerformedProcedureStepDescription": None,
             },
         )
@@ -881,7 +881,7 @@ class DicomOperations:
             body_part_examined=_ds_str(ds, "BodyPartExamined"),
             protocol_name=_ds_str(ds, "ProtocolName"),
             series_date=_ds_str(ds, "SeriesDate"),
-            operator_name=_ds_str(ds, "OperatorName"),
+            operator_name=_ds_str(ds, "OperatorsName"),
             performed_procedure_step_description=_ds_str(
                 ds, "PerformedProcedureStepDescription"
             ),

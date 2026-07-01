@@ -126,6 +126,17 @@ class FakePacs:
                     for i in self._instances
                     if str(i.StudyInstanceUID) == str(ds.StudyInstanceUID)
                 )
+                for attr in (
+                    "PatientBirthDate",
+                    "PatientSex",
+                    "StudyID",
+                    "ReferringPhysicianName",
+                    "InstitutionName",
+                    "StationName",
+                    "SOPClassesInStudy",
+                ):
+                    if getattr(ds, attr, None) is not None:
+                        setattr(resp, attr, getattr(ds, attr))
             elif level == "SERIES":
                 resp.SeriesInstanceUID = ds.SeriesInstanceUID
                 resp.Modality = ds.Modality
@@ -136,11 +147,23 @@ class FakePacs:
                     for i in self._instances
                     if str(i.SeriesInstanceUID) == str(ds.SeriesInstanceUID)
                 )
+                for attr in (
+                    "BodyPartExamined",
+                    "ProtocolName",
+                    "SeriesDate",
+                    "OperatorsName",
+                    "PerformedProcedureStepDescription",
+                ):
+                    if getattr(ds, attr, None) is not None:
+                        setattr(resp, attr, getattr(ds, attr))
             else:  # IMAGE
                 resp.SeriesInstanceUID = ds.SeriesInstanceUID
                 resp.SOPInstanceUID = ds.SOPInstanceUID
                 resp.SOPClassUID = ds.SOPClassUID
                 resp.InstanceNumber = ds.InstanceNumber
+                for attr in ("ImageType", "ContentDate", "SliceThickness"):
+                    if getattr(ds, attr, None) is not None:
+                        setattr(resp, attr, getattr(ds, attr))
             yield (0xFF00, resp)
         yield (0x0000, None)
 

@@ -79,7 +79,7 @@ def test_series_query_requests_extended_keys() -> None:
         "BodyPartExamined",
         "ProtocolName",
         "SeriesDate",
-        "OperatorName",
+        "OperatorsName",
         "PerformedProcedureStepDescription",
     ):
         assert getattr(ds, attr) == ""
@@ -122,7 +122,7 @@ def test_parse_series_result_populates_extended_fields() -> None:
         BodyPartExamined="BRAIN",
         ProtocolName="PROT1",
         SeriesDate="20200101",
-        OperatorName="OPER^X",
+        OperatorsName="OPER^X",
         PerformedProcedureStepDescription="PPS desc",
     )
     r = DicomOperations(calling_aet="X")._parse_series_result(ds)
