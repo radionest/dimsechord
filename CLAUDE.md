@@ -1,5 +1,21 @@
 # dimsechord
 
+## Structure
+
+- `src/dimsechord/__init__.py` — the only public surface (see docstring);
+  all other modules are private (`_`-prefixed, unsupported to import
+  directly)
+- `.claude/rules/` — DICOM/DIMSE domain, public API convention,
+  concurrency model, DICOMweb conversion — each auto-loaded by path when
+  touching the specific `src/dimsechord/**` files it's scoped to
+- `docs/` — user-facing guides (why, typing, cookbook, gateway tutorial)
+
+## Development
+
+- Tests: `uv run pytest`
+- Lint: `uv run ruff check .`
+- Types: `uv run mypy src`
+
 ## Worktree Workflow
 
 - Feature development: always enter a worktree via `EnterWorktree` before making changes
