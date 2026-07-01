@@ -76,6 +76,14 @@ class StudyResult:
     modalities_in_study: str | None = None
     number_of_study_related_series: int | None = None
     number_of_study_related_instances: int | None = None
+    # Standard study-level fields (C-FIND result extension).
+    patient_birth_date: str | None = None
+    patient_sex: str | None = None
+    study_id: str | None = None
+    referring_physician_name: str | None = None
+    institution_name: str | None = None
+    station_name: str | None = None
+    sop_classes_in_study: list[str] | None = None
 
 
 @dataclass(slots=True, kw_only=True)
@@ -88,6 +96,12 @@ class SeriesResult:
     modality: str | None = None
     series_description: str | None = None
     number_of_series_related_instances: int | None = None
+    # Standard series-level fields (C-FIND result extension).
+    body_part_examined: str | None = None
+    protocol_name: str | None = None
+    series_date: str | None = None
+    operator_name: str | None = None
+    performed_procedure_step_description: str | None = None
 
 
 @dataclass(slots=True, kw_only=True)
@@ -101,6 +115,10 @@ class ImageResult:
     instance_number: int | None = None
     rows: int | None = None
     columns: int | None = None
+    # Standard image-level fields (C-FIND result extension).
+    image_type: list[str] | None = None
+    content_date: str | None = None
+    slice_thickness: float | None = None
 
 
 @dataclass(slots=True, kw_only=True)
