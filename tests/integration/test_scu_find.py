@@ -189,3 +189,26 @@ def test_scu_find_round_trips_extended_image_fields(free_port) -> None:
         assert im.slice_thickness == 2.5
     finally:
         pacs.stop()
+
+
+@pytest.mark.timeout(30)
+def test_scu_find_round_trips_single_image_type(free_port) -> None:
+    pacs = FakePacs(aet="FAKEPACS")
+    ds = make_instance("1.2.3", "1.2.3.4", "1.2.3.4.1")
+    ds.ImageType = "ORIGINAL"
+    pacs.add_instance(ds)
+    port = free_port()
+    pacs.start(port)
+    pacs.port = port
+    try:
+        ops = DicomOperations(calling_aet="TESTSCU")
+        cfg = AssociationConfig(
+            calling_aet="TESTSCU", called_aet=pacs.aet, peer_host="127.0.0.1", peer_port=port
+        )
+        images = ops.find_images(
+            cfg, ImageQuery(study_instance_uid="1.2.3", series_instance_uid="1.2.3.4")
+        )
+        assert len(images) == 1
+        assert images[0].image_type == ["ORIGINAL"]
+    finally:
+        pacs.stop()

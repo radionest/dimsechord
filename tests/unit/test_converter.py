@@ -126,3 +126,34 @@ def test_extended_none_fields_omitted_from_dicom_json() -> None:
     js = study_result_to_dicom_json(StudyResult(study_instance_uid="1.2.3"))
     for tag in ("00100030", "00100040", "00200010", "00080090", "00080080", "00081010", "00080062"):
         assert tag not in js
+
+
+def test_series_extended_none_fields_omitted_from_dicom_json() -> None:
+    js = series_result_to_dicom_json(
+        SeriesResult(study_instance_uid="1.2.3", series_instance_uid="1.2.3.4")
+    )
+    for tag in ("00180015", "00181030", "00080021", "00081070", "00400253"):
+        assert tag not in js
+
+
+def test_image_extended_none_fields_omitted_from_dicom_json() -> None:
+    js = image_result_to_dicom_json(
+        ImageResult(
+            study_instance_uid="1.2.3", series_instance_uid="1.2.3.4", sop_instance_uid="1.2.3.4.1"
+        )
+    )
+    for tag in ("00080008", "00080023", "00180050"):
+        assert tag not in js
+
+
+def test_operator_name_empty_element_keeps_value_positionally_aligned() -> None:
+    # A blank component in a multi-valued PN (e.g. OperatorsName="OPER^X\\")
+    # must not be silently dropped — that would desync Value[] from the
+    # parsed operator_name list it was built from.
+    result = SeriesResult(
+        study_instance_uid="1.2.3",
+        series_instance_uid="1.2.3.4",
+        operator_name=["OPER^X", ""],
+    )
+    js = series_result_to_dicom_json(result)
+    assert js["00081070"] == {"vr": "PN", "Value": [{"Alphabetic": "OPER^X"}, {}]}

@@ -75,6 +75,12 @@ def _ds_float(ds: Dataset, attr: str) -> float | None:
     Returns ``None`` for a missing/empty value. Non-numeric DS values log a
     warning and return ``None`` rather than raising — slice thickness and
     similar DS fields are best-effort metadata, never worth aborting a parse.
+
+    Unlike ``_ds_modalities``, this is not required to be byte-identical to
+    the wire string: DICOM JSON (PS3.18 Annex F) represents DS values as
+    JSON numbers, so the ``float`` conversion here matches the target
+    format rather than round-tripping the original decimal text (e.g. a
+    trailing zero in ``"2.50"`` is not preserved).
     """
     val: Any = getattr(ds, attr, None)
     if val is None or val == "":

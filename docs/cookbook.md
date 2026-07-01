@@ -40,7 +40,12 @@ images = await client.find_images(
 ```
 
 `find_studies` returns `list[StudyResult]`, `find_series` returns
-`list[SeriesResult]`, `find_images` returns `list[ImageResult]`.
+`list[SeriesResult]`, `find_images` returns `list[ImageResult]`. Beyond the
+identifying UIDs, each also carries standard optional DICOM fields (e.g.
+`patient_birth_date` / `referring_physician_name` / `sop_classes_in_study`
+on `StudyResult`, `operator_name` / `body_part_examined` on `SeriesResult`,
+`image_type` / `slice_thickness` on `ImageResult`) — the dataclasses are
+typed, so your editor/type checker shows the full field list.
 
 ## Store to a peer (C-STORE)
 

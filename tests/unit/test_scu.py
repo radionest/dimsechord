@@ -18,6 +18,13 @@ def test_ds_float_numeric() -> None:
     assert _ds_float(_ds(SliceThickness="2.5"), "SliceThickness") == 2.5
 
 
+def test_ds_float_drops_trailing_zero_precision() -> None:
+    # Documents the accepted lossy conversion: DS wire text "2.500000" is
+    # not preserved byte-for-byte, only its numeric value (DICOM JSON
+    # represents DS as a JSON number, not a decimal string).
+    assert _ds_float(_ds(SliceThickness="2.500000"), "SliceThickness") == 2.5
+
+
 def test_ds_float_missing_returns_none() -> None:
     assert _ds_float(Dataset(), "SliceThickness") is None
 

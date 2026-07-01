@@ -52,11 +52,13 @@ def _pn_list(names: list[str] | None) -> list[dict[str, str]] | None:
     A multi-valued PN attribute (e.g. ``OperatorsName``, VM 1-n) requires
     one ``{"Alphabetic": ...}`` object per value in the ``Value`` array
     (PS3.18 Annex F) — unlike single-valued PN, the names cannot be
-    collapsed into one object.
+    collapsed into one object. An empty name maps to ``{}`` rather than
+    being dropped, so the ``Value`` array stays positionally aligned with
+    the parsed ``operator_name`` list (VM is preserved).
     """
     if not names:
         return None
-    return [{"Alphabetic": n} for n in names if n] or None
+    return [{"Alphabetic": n} if n else {} for n in names]
 
 
 def _fields_to_dicom_json(fields: list[tuple[str, str, Any]]) -> DicomJson:
