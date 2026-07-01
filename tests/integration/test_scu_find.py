@@ -119,7 +119,7 @@ def test_scu_find_round_trips_extended_series_fields(free_port) -> None:
     ds.BodyPartExamined = "BRAIN"
     ds.ProtocolName = "PROT1"
     ds.SeriesDate = "20200101"
-    ds.OperatorsName = "OPER^X"
+    ds.OperatorsName = ["OPER^X", "OPER^Y"]
     ds.PerformedProcedureStepDescription = "PPS desc"
     pacs.add_instance(ds)
     port = free_port()
@@ -136,7 +136,7 @@ def test_scu_find_round_trips_extended_series_fields(free_port) -> None:
         assert sr.body_part_examined == "BRAIN"
         assert sr.protocol_name == "PROT1"
         assert sr.series_date == "20200101"
-        assert sr.operator_name == "OPER^X"
+        assert sr.operator_name == ["OPER^X", "OPER^Y"]
         assert sr.performed_procedure_step_description == "PPS desc"
     finally:
         pacs.stop()

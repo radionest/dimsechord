@@ -118,11 +118,11 @@ def test_series_result_extended_fields_keyword_construction() -> None:
         body_part_examined="BRAIN",
         protocol_name="PROT1",
         series_date="20200101",
-        operator_name="OPER^X",
+        operator_name=["OPER^X"],
         performed_procedure_step_description="PPS desc",
     )
     assert r.body_part_examined == "BRAIN"
-    assert r.operator_name == "OPER^X"
+    assert r.operator_name == ["OPER^X"]
 
 
 def test_image_result_extended_fields_default_none() -> None:

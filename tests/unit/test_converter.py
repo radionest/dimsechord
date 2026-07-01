@@ -93,14 +93,17 @@ def test_series_result_extended_fields_to_dicom_json() -> None:
         body_part_examined="BRAIN",
         protocol_name="PROT1",
         series_date="20200101",
-        operator_name="OPER^X",
+        operator_name=["OPER^X", "OPER^Y"],
         performed_procedure_step_description="PPS desc",
     )
     js = series_result_to_dicom_json(result)
     assert js["00180015"] == {"vr": "CS", "Value": ["BRAIN"]}
     assert js["00181030"] == {"vr": "LO", "Value": ["PROT1"]}
     assert js["00080021"] == {"vr": "DA", "Value": ["20200101"]}
-    assert js["00081070"] == {"vr": "PN", "Value": [{"Alphabetic": "OPER^X"}]}
+    assert js["00081070"] == {
+        "vr": "PN",
+        "Value": [{"Alphabetic": "OPER^X"}, {"Alphabetic": "OPER^Y"}],
+    }
     assert js["00400253"] == {"vr": "LO", "Value": ["PPS desc"]}
 
 

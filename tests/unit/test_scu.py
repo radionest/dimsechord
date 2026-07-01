@@ -122,14 +122,14 @@ def test_parse_series_result_populates_extended_fields() -> None:
         BodyPartExamined="BRAIN",
         ProtocolName="PROT1",
         SeriesDate="20200101",
-        OperatorsName="OPER^X",
+        OperatorsName=MultiValue(str, ["OPER^X", "OPER^Y"]),
         PerformedProcedureStepDescription="PPS desc",
     )
     r = DicomOperations(calling_aet="X")._parse_series_result(ds)
     assert r.body_part_examined == "BRAIN"
     assert r.protocol_name == "PROT1"
     assert r.series_date == "20200101"
-    assert r.operator_name == "OPER^X"
+    assert r.operator_name == ["OPER^X", "OPER^Y"]
     assert r.performed_procedure_step_description == "PPS desc"
 
 

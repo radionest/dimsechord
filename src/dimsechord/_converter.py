@@ -46,6 +46,19 @@ def _pn(name: str | None) -> dict[str, str] | None:
     return {"Alphabetic": name} if name else None
 
 
+def _pn_list(names: list[str] | None) -> list[dict[str, str]] | None:
+    """Wrap multi-valued PN names into a list of DICOM-JSON PN objects.
+
+    A multi-valued PN attribute (e.g. ``OperatorsName``, VM 1-n) requires
+    one ``{"Alphabetic": ...}`` object per value in the ``Value`` array
+    (PS3.18 Annex F) — unlike single-valued PN, the names cannot be
+    collapsed into one object.
+    """
+    if not names:
+        return None
+    return [{"Alphabetic": n} for n in names if n] or None
+
+
 def _fields_to_dicom_json(fields: list[tuple[str, str, Any]]) -> DicomJson:
     return {tag: _tag_value(vr, val) for tag, vr, val in fields if val is not None}
 
@@ -99,7 +112,7 @@ def series_result_to_dicom_json(result: SeriesResult) -> DicomJson:
             ("00180015", "CS", result.body_part_examined),
             ("00181030", "LO", result.protocol_name),
             ("00080021", "DA", result.series_date),
-            ("00081070", "PN", _pn(result.operator_name)),
+            ("00081070", "PN", _pn_list(result.operator_name)),
             ("00400253", "LO", result.performed_procedure_step_description),
         ]
     )

@@ -100,7 +100,7 @@ class SeriesResult:
     body_part_examined: str | None = None
     protocol_name: str | None = None
     series_date: str | None = None
-    operator_name: str | None = None
+    operator_name: list[str] | None = None
     performed_procedure_step_description: str | None = None
 
 
