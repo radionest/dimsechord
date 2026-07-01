@@ -41,6 +41,11 @@ def _tag_value(vr: str, value: Any) -> TagValue:
     return entry
 
 
+def _pn(name: str | None) -> dict[str, str] | None:
+    """Wrap a raw PN string into the DICOM-JSON ``{"Alphabetic": ...}`` form."""
+    return {"Alphabetic": name} if name else None
+
+
 def _fields_to_dicom_json(fields: list[tuple[str, str, Any]]) -> DicomJson:
     return {tag: _tag_value(vr, val) for tag, vr, val in fields if val is not None}
 
@@ -63,11 +68,7 @@ def study_result_to_dicom_json(result: StudyResult) -> DicomJson:
         [
             ("0020000D", "UI", result.study_instance_uid),
             ("00100020", "LO", result.patient_id),
-            (
-                "00100010",
-                "PN",
-                {"Alphabetic": result.patient_name} if result.patient_name else None,
-            ),
+            ("00100010", "PN", _pn(result.patient_name)),
             ("00080020", "DA", result.study_date),
             ("00080030", "TM", result.study_time),
             ("00081030", "LO", result.study_description),
@@ -75,6 +76,13 @@ def study_result_to_dicom_json(result: StudyResult) -> DicomJson:
             ("00080061", "CS", _modalities_to_list(result.modalities_in_study)),
             ("00201206", "IS", result.number_of_study_related_series),
             ("00201208", "IS", result.number_of_study_related_instances),
+            ("00100030", "DA", result.patient_birth_date),
+            ("00100040", "CS", result.patient_sex),
+            ("00200010", "SH", result.study_id),
+            ("00080090", "PN", _pn(result.referring_physician_name)),
+            ("00080080", "LO", result.institution_name),
+            ("00081010", "SH", result.station_name),
+            ("00080062", "UI", result.sop_classes_in_study),
         ]
     )
 
@@ -88,6 +96,11 @@ def series_result_to_dicom_json(result: SeriesResult) -> DicomJson:
             ("00200011", "IS", result.series_number),
             ("0008103E", "LO", result.series_description),
             ("00201209", "IS", result.number_of_series_related_instances),
+            ("00180015", "CS", result.body_part_examined),
+            ("00181030", "LO", result.protocol_name),
+            ("00080021", "DA", result.series_date),
+            ("00081070", "PN", _pn(result.operator_name)),
+            ("00400253", "LO", result.performed_procedure_step_description),
         ]
     )
 
@@ -102,6 +115,9 @@ def image_result_to_dicom_json(result: ImageResult) -> DicomJson:
             ("00200013", "IS", result.instance_number),
             ("00280010", "US", result.rows),
             ("00280011", "US", result.columns),
+            ("00080008", "CS", result.image_type),
+            ("00080023", "DA", result.content_date),
+            ("00180050", "DS", result.slice_thickness),
         ]
     )
 
