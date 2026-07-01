@@ -56,6 +56,13 @@ def test_ds_str_list_empty_returns_none() -> None:
     assert _ds_str_list(_ds(ImageType=""), "ImageType") is None
 
 
+def test_ds_str_list_scalar_person_name() -> None:
+    # OperatorsName (PN, VM 1-n): a single value comes back from pydicom as a
+    # PersonName, not a str subclass. Naive iteration walks it
+    # character-by-character — this guards against that regression.
+    assert _ds_str_list(_ds(OperatorsName="OPER^X"), "OperatorsName") == ["OPER^X"]
+
+
 # ── query builders request the new retrieval keys ────────────────
 def test_study_query_requests_extended_keys_as_empty_retrieval() -> None:
     ds = DicomOperations(calling_aet="X")._build_study_query_dataset(StudyQuery())
@@ -131,6 +138,12 @@ def test_parse_series_result_populates_extended_fields() -> None:
     assert r.series_date == "20200101"
     assert r.operator_name == ["OPER^X", "OPER^Y"]
     assert r.performed_procedure_step_description == "PPS desc"
+
+
+def test_parse_series_result_single_operator_name() -> None:
+    ds = _ds(StudyInstanceUID="1.2.3", SeriesInstanceUID="1.2.3.4", OperatorsName="OPER^X")
+    r = DicomOperations(calling_aet="X")._parse_series_result(ds)
+    assert r.operator_name == ["OPER^X"]
 
 
 def test_parse_image_result_populates_extended_fields() -> None:

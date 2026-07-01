@@ -143,6 +143,27 @@ def test_scu_find_round_trips_extended_series_fields(free_port) -> None:
 
 
 @pytest.mark.timeout(30)
+def test_scu_find_round_trips_single_operator_name(free_port) -> None:
+    pacs = FakePacs(aet="FAKEPACS")
+    ds = make_instance("1.2.3", "1.2.3.4", "1.2.3.4.1")
+    ds.OperatorsName = "OPER^X"
+    pacs.add_instance(ds)
+    port = free_port()
+    pacs.start(port)
+    pacs.port = port
+    try:
+        ops = DicomOperations(calling_aet="TESTSCU")
+        cfg = AssociationConfig(
+            calling_aet="TESTSCU", called_aet=pacs.aet, peer_host="127.0.0.1", peer_port=port
+        )
+        series = ops.find_series(cfg, SeriesQuery(study_instance_uid="1.2.3"))
+        assert len(series) == 1
+        assert series[0].operator_name == ["OPER^X"]
+    finally:
+        pacs.stop()
+
+
+@pytest.mark.timeout(30)
 def test_scu_find_round_trips_extended_image_fields(free_port) -> None:
     pacs = FakePacs(aet="FAKEPACS")
     ds = make_instance("1.2.3", "1.2.3.4", "1.2.3.4.1")

@@ -16,6 +16,7 @@ from contextlib import contextmanager
 from typing import TYPE_CHECKING, Any
 
 from pydicom import Dataset
+from pydicom.multival import MultiValue
 from pynetdicom import AE, StoragePresentationContexts, build_role
 from pynetdicom.pdu_primitives import SCP_SCU_RoleSelectionNegotiation
 from pynetdicom.sop_class import (  # type: ignore[attr-defined]
@@ -88,23 +89,24 @@ def _ds_float(ds: Dataset, attr: str) -> float | None:
 def _ds_str_list(ds: Dataset, attr: str) -> list[str] | None:
     """Get a multi-valued DICOM attribute as ``list[str]``.
 
-    For tags like ``SOPClassesInStudy`` / ``ImageType``: pydicom returns a
-    ``MultiValue`` (or a plain ``str`` for a single value). Unlike
+    For tags like ``SOPClassesInStudy`` / ``ImageType`` / ``OperatorsName``:
+    pydicom returns a ``MultiValue`` for VM>1, or a scalar (``str``, ``UID``,
+    ``PersonName``, ...) for a single value. Only a ``MultiValue`` is
+    iterated element-by-element; a scalar is wrapped as one element via
+    ``str()`` rather than iterated directly — ``PersonName`` is not a
+    ``str`` subclass, so naive iteration walks it character-by-character
+    (``"OPER^X"`` -> ``['O', 'P', 'E', 'R', '^', 'X']``). Unlike
     ``_ds_modalities`` this keeps the list form — these tags are not
     DB-indexed, so there is no ``\\``-joined wire-form constraint. Returns
-    ``None`` for a missing/empty/non-iterable value.
+    ``None`` for a missing/empty value.
     """
     val: Any = getattr(ds, attr, None)
     if val is None or val == "":
         return None
-    if isinstance(val, str):
-        return [val]
-    try:
+    if isinstance(val, MultiValue):
         items = [str(v) for v in val]
-    except TypeError:
-        logger.warning(f"_ds_str_list: {attr} is not iterable ({val!r}); returning None")
-        return None
-    return items or None
+        return items or None
+    return [str(val)]
 
 
 def _ds_modalities(ds: Dataset) -> str | None:
