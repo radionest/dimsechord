@@ -4,8 +4,7 @@ from pynetdicom.sop_class import (  # type: ignore[attr-defined]
     StudyRootQueryRetrieveInformationModelFind,
 )
 
-from dimsechord import AssociationPool, DicomNode
-from dimsechord._query_engine import QueryEngine
+from dimsechord import AssociationPool, DicomNode, QueryEngine
 
 FIND = StudyRootQueryRetrieveInformationModelFind
 

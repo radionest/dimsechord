@@ -152,19 +152,7 @@ def _skip_bulk_data(_data_element: DataElement) -> str:
     return ""
 
 
-def dataset_to_dicom_json(ds: Dataset, base_url: str) -> DicomJson:
-    """Convert a pydicom Dataset to DICOM JSON, replacing PixelData with BulkDataURI.
-
-    The original dataset is **never mutated** — PixelData is skipped during JSON
-    serialization via a bulk data handler, then replaced with a BulkDataURI entry.
-
-    Args:
-        ds: pydicom Dataset (may contain PixelData)
-        base_url: Base URL for constructing BulkDataURIs
-
-    Returns:
-        DICOM JSON dict keyed by tag
-    """
+def _elements_to_json(ds: Dataset) -> dict[str, Any]:
     # Replicates Dataset.to_json_dict(suppress_invalid_tags=True) WITHOUT its
     # config.strict_reading() wrapper: that context manager mutates the GLOBAL
     # pydicom validation mode, so concurrent conversions in asyncio.to_thread
@@ -184,6 +172,32 @@ def dataset_to_dicom_json(ds: Dataset, base_url: str) -> DicomJson:
             )
         except Exception as e:
             logger.warning(f"Skipping non-serializable tag {json_key} in instance {sop_uid}: {e}")
+    return json_dict
+
+
+def dataset_to_qido_json(ds: Dataset) -> DicomJson:
+    """Convert a C-FIND response identifier to DICOM JSON (PS3.18 Annex F) as-is.
+
+    Unlike ``dataset_to_dicom_json`` no BulkDataURI entry is injected — QIDO
+    responses carry no pixel data and need no base URL.
+    """
+    return cast("DicomJson", _elements_to_json(ds))
+
+
+def dataset_to_dicom_json(ds: Dataset, base_url: str) -> DicomJson:
+    """Convert a pydicom Dataset to DICOM JSON, replacing PixelData with BulkDataURI.
+
+    The original dataset is **never mutated** — PixelData is skipped during JSON
+    serialization via a bulk data handler, then replaced with a BulkDataURI entry.
+
+    Args:
+        ds: pydicom Dataset (may contain PixelData)
+        base_url: Base URL for constructing BulkDataURIs
+
+    Returns:
+        DICOM JSON dict keyed by tag
+    """
+    json_dict: dict[str, Any] = _elements_to_json(ds)
 
     # Always set BulkDataURI for pixel data retrieval — even when PixelData
     # was stripped from the dataset before conversion (metadata endpoint) or
