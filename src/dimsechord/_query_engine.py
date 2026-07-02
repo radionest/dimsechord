@@ -36,12 +36,14 @@ class QueryEngine:
         pacs: DicomNode,
         *,
         max_pdu: int = 16384,
-        find_timeout: float = 30.0,
+        find_timeout: float = 60.0,
+        lease_timeout: float = 30.0,
     ) -> None:
         self._pool = pool
         self._pacs = pacs
         self._max_pdu = max_pdu
         self._find_timeout = find_timeout
+        self._lease_timeout = lease_timeout
 
     def iter_find(
         self, identifier: Dataset, *, model: str, timeout: float | None = None
@@ -49,12 +51,15 @@ class QueryEngine:
         """Yield raw pending-response identifiers as they arrive.
 
         Leases a find identity for the lifetime of the generator; the lease is
-        released whether the stream completes, fails, or is closed early
+        acquired lazily on first iteration (waiting up to ``lease_timeout``)
+        and released whether the stream completes, fails, or is closed early
         (early close also aborts the upstream association — see
-        ``DicomOperations.find_iter``).
+        ``DicomOperations.find_iter``). ``timeout`` overrides the engine's
+        ``find_timeout`` — the ACSE/DIMSE/network socket timeouts, and thereby
+        the idle cap between two responses; the lease wait is a separate knob.
         """
         t = self._find_timeout if timeout is None else timeout
-        with self._pool.lease_find(timeout=t) as aet:
+        with self._pool.lease_find(timeout=self._lease_timeout) as aet:
             # SCU built per lease so its AE title == the leased identity
             # (same reasoning as PullEngine's move transport).
             ops = DicomOperations(calling_aet=aet, max_pdu=self._max_pdu)

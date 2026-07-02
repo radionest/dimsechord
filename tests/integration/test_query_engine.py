@@ -6,7 +6,7 @@ from pynetdicom.sop_class import (  # type: ignore[attr-defined]
     StudyRootQueryRetrieveInformationModelFind,
 )
 
-from dimsechord import AssociationPool, DicomNode, QueryEngine
+from dimsechord import AssociationPool, DicomNode, PoolExhaustedError, QueryEngine
 
 FIND = StudyRootQueryRetrieveInformationModelFind
 
@@ -58,6 +58,31 @@ def test_early_close_releases_lease(fake_pacs) -> None:
     gen.close()
     with pool.lease_find(timeout=1.0) as aet:  # slot free immediately
         assert aet == "POOLA"
+
+
+@pytest.mark.timeout(30)
+def test_iter_find_lease_is_lazy_and_uses_lease_timeout(fake_pacs) -> None:
+    pool = AssociationPool(aets=["POOLA"], per_aet_find_cap=1)
+    node = DicomNode(aet=fake_pacs.aet, host="127.0.0.1", port=fake_pacs.port)
+    engine = QueryEngine(pool, node, find_timeout=30.0, lease_timeout=0.2)
+    with pool.lease_find(timeout=0.5):
+        gen = engine.iter_find(_identifier(), model=FIND)  # building acquires nothing
+        start = time.monotonic()
+        with pytest.raises(PoolExhaustedError):
+            next(gen)  # lease surfaces here, bounded by lease_timeout, not find_timeout
+        assert time.monotonic() - start < 5.0
+
+
+@pytest.mark.timeout(30)
+@pytest.mark.asyncio
+async def test_stream_find_lease_is_lazy(fake_pacs) -> None:
+    pool = AssociationPool(aets=["POOLA"], per_aet_find_cap=1)
+    node = DicomNode(aet=fake_pacs.aet, host="127.0.0.1", port=fake_pacs.port)
+    engine = QueryEngine(pool, node, find_timeout=30.0, lease_timeout=0.2)
+    with pool.lease_find(timeout=0.5):
+        agen = engine.stream_find(_identifier(), model=FIND)  # building acquires nothing
+        with pytest.raises(PoolExhaustedError):
+            await anext(agen)
 
 
 @pytest.mark.timeout(30)
