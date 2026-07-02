@@ -19,25 +19,39 @@ logger = logging.getLogger(__name__)
 @dataclass(frozen=True)
 class _PooledAet:
     aet: str
-    semaphore: threading.Semaphore
+    move_semaphore: threading.Semaphore
+    find_semaphore: threading.Semaphore
 
 
 class AssociationPool:
-    """A pool of AET identities, each capped at ``per_aet_cap`` concurrent associations.
+    """A pool of AET identities with independent move and find caps.
 
-    The leased AET is used as both the calling AET and the C-MOVE destination, so
-    returning C-STORE sub-operations arrive addressed to that AET. ``N=1, cap=1``
-    reproduces the legacy single-semaphore behaviour.
+    Move leases (``lease``) gate C-MOVE-to-self, where the leased AET doubles
+    as the C-MOVE destination and must be exclusive per slot. Find leases
+    (``lease_find``) gate plain C-FIND calling identities — a PACS tolerates
+    several concurrent associations from one AET, so the cap is independent
+    and typically higher. ``N=1, per_aet_cap=1`` reproduces the legacy
+    move behaviour.
     """
 
-    def __init__(self, aets: list[str], per_aet_cap: int = 1) -> None:
+    def __init__(
+        self, aets: list[str], per_aet_cap: int = 1, per_aet_find_cap: int = 4
+    ) -> None:
         if not aets:
             raise ValueError("AssociationPool requires at least one AET")
         if per_aet_cap < 1:
             raise ValueError("per_aet_cap must be >= 1")
+        if per_aet_find_cap < 1:
+            raise ValueError("per_aet_find_cap must be >= 1")
         self._per_aet_cap = per_aet_cap
+        self._per_aet_find_cap = per_aet_find_cap
         self._pooled = [
-            _PooledAet(aet=a, semaphore=threading.Semaphore(per_aet_cap)) for a in aets
+            _PooledAet(
+                aet=a,
+                move_semaphore=threading.Semaphore(per_aet_cap),
+                find_semaphore=threading.Semaphore(per_aet_find_cap),
+            )
+            for a in aets
         ]
         self._rr_lock = threading.Lock()
         self._next = 0
@@ -50,33 +64,44 @@ class AssociationPool:
     def total_capacity(self) -> int:
         return len(self._pooled) * self._per_aet_cap
 
-    def _acquire(self, timeout: float | None) -> _PooledAet:
+    def _acquire(self, timeout: float | None, kind: str) -> _PooledAet:
         n = len(self._pooled)
         with self._rr_lock:
             start = self._next
             self._next = (self._next + 1) % n
 
+        def sem(p: _PooledAet) -> threading.Semaphore:
+            return p.move_semaphore if kind == "move" else p.find_semaphore
+
         # Fast path: try every AET non-blocking, round-robin start.
         for i in range(n):
             pooled = self._pooled[(start + i) % n]
-            if pooled.semaphore.acquire(blocking=False):
+            if sem(pooled).acquire(blocking=False):
                 return pooled
 
         # All busy: block on the round-robin-chosen AET (timeout=None → forever).
         pooled = self._pooled[start]
-        acquired = pooled.semaphore.acquire(timeout=timeout)
+        acquired = sem(pooled).acquire(timeout=timeout)
         if not acquired:
             raise PoolExhaustedError(
-                f"No association slot available within {timeout}s "
-                f"(capacity={self.total_capacity})"
+                f"No {kind} association slot available within {timeout}s"
             )
         return pooled
 
     @contextmanager
     def lease(self, timeout: float | None = None) -> Iterator[str]:
-        """Lease one AET for the duration of the ``with`` block."""
-        pooled = self._acquire(timeout)
+        """Lease one AET for a C-MOVE-to-self for the duration of the block."""
+        pooled = self._acquire(timeout, "move")
         try:
             yield pooled.aet
         finally:
-            pooled.semaphore.release()
+            pooled.move_semaphore.release()
+
+    @contextmanager
+    def lease_find(self, timeout: float | None = None) -> Iterator[str]:
+        """Lease one AET identity for a C-FIND for the duration of the block."""
+        pooled = self._acquire(timeout, "find")
+        try:
+            yield pooled.aet
+        finally:
+            pooled.find_semaphore.release()

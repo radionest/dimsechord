@@ -1,4 +1,5 @@
 import threading
+from contextlib import ExitStack
 
 import pytest
 
@@ -67,3 +68,32 @@ def test_two_aets_allow_two_concurrent_leases() -> None:
         t.join(timeout=10)
 
     assert sorted(seen) == ["A", "B"]
+
+
+def test_find_lease_independent_of_move_lease() -> None:
+    pool = AssociationPool(aets=["A"], per_aet_cap=1, per_aet_find_cap=1)
+    with pool.lease(timeout=1), pool.lease_find(timeout=1) as aet:
+        assert aet == "A"
+
+
+def test_find_cap_exhaustion_does_not_block_move() -> None:
+    pool = AssociationPool(aets=["A"], per_aet_cap=1, per_aet_find_cap=1)
+    with pool.lease_find(timeout=1):
+        with pytest.raises(PoolExhaustedError), pool.lease_find(timeout=0.2):
+            pass
+        with pool.lease(timeout=1) as aet:
+            assert aet == "A"
+
+
+def test_find_cap_default_is_four() -> None:
+    pool = AssociationPool(aets=["A"])
+    with ExitStack() as stack:
+        for _ in range(4):
+            stack.enter_context(pool.lease_find(timeout=0.5))
+        with pytest.raises(PoolExhaustedError), pool.lease_find(timeout=0.2):
+            pass
+
+
+def test_find_cap_validation() -> None:
+    with pytest.raises(ValueError):
+        AssociationPool(aets=["A"], per_aet_find_cap=0)
