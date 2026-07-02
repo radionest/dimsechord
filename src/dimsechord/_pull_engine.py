@@ -109,6 +109,12 @@ class _MoveToSelfTransport:
 
         if move_error:
             raise move_error[0]
+        if move_thread.is_alive():
+            raise AssociationError(
+                f"C-MOVE driver for {scp_key} did not finish within {self._cmove_timeout}s — "
+                "shutdown mid-pull or a hung C-MOVE; refusing to treat the partial "
+                "delivery as complete."
+            )
         if yielded == 0:
             raise MoveToSelfError(
                 f"C-MOVE for {scp_key} completed but no instances arrived — "

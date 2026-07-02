@@ -1,3 +1,6 @@
+import threading
+import time
+
 import pytest
 
 from dimsechord._cache import DicomCache
@@ -5,8 +8,9 @@ from dimsechord._exceptions import AssociationError, MoveToSelfError
 from dimsechord._models import DicomNode, RetrieveResult
 from dimsechord._pool import AssociationPool
 from dimsechord._pull_engine import PullEngine
-from dimsechord._scp import StorageSCP
+from dimsechord._scp import MoveSession, StorageSCP
 from dimsechord._scu import DicomOperations
+from tests.factories import make_instance
 
 
 @pytest.fixture
@@ -260,3 +264,73 @@ def test_complete_series_served_from_disk_without_transport(
     assert len(fake_pacs.moves) == moves_before  # no new C-MOVE
     promoted = cache.get_series_from_memory(study, series)
     assert promoted is not None and promoted.disk_persisted is True
+
+
+def _await_session(scp: StorageSCP, key: str, timeout: float = 5.0) -> MoveSession:
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        with scp._lock:
+            session = scp._sessions.get(key)
+        if session is not None:
+            return session
+        time.sleep(0.005)
+    raise AssertionError(f"session {key} was not registered within {timeout}s")
+
+
+@pytest.mark.timeout(30)
+def test_orphaned_move_driver_not_certified_complete(monkeypatch, free_port, tmp_path) -> None:
+    """Issue #15 blocker: a driver still alive after the bounded join must raise.
+
+    When the stream breaks on the end-of-stream sentinel (shutdown mid-pull) while the
+    C-MOVE driver thread is still stuck inside ``move_study``, the bounded
+    ``move_thread.join`` returns with the thread alive, ``move_error`` empty and a
+    partial set delivered. That must raise ``AssociationError`` rather than finish
+    cleanly and certify the partial delivery as a complete series.
+    """
+    scp_port = free_port()
+    pool = AssociationPool(aets=["ORPHANPOOL"], per_aet_cap=1)
+    scp = StorageSCP()
+    scp.start({"ORPHANPOOL": scp_port})
+    cache = DicomCache(base_dir=tmp_path / "cache", index_path=tmp_path / "index.db")
+    pacs = DicomNode(aet="PACS", host="127.0.0.1", port=free_port())
+    eng = PullEngine(
+        pool=pool, scp=scp, cache=cache, pacs=pacs,
+        cmove_timeout=0.5, arrival_timeout=30.0,
+    )
+
+    release = threading.Event()
+
+    def blocking_move_study(self, config, request, destination_aet):  # noqa: ARG001
+        release.wait(timeout=20)  # driver hangs here → thread stays alive
+        return RetrieveResult(status="success", num_completed=1, num_failed=0)
+
+    monkeypatch.setattr(DicomOperations, "move_study", blocking_move_study)
+
+    study, series = "9.9.9.ORPHAN", "8.8.8.ORPHAN"
+    scp_key = f"{study}/{series}"
+    result: dict[str, object] = {}
+
+    def consume() -> None:
+        try:
+            result["received"] = list(eng.iter_series(study, series))
+        except Exception as e:
+            result["error"] = e
+
+    consumer = threading.Thread(target=consume, name="orphan-consumer")
+    try:
+        consumer.start()
+        session = _await_session(scp, scp_key)
+        # Deliver one instance, then end the stream while the driver is still hung.
+        inst = make_instance(study, series, "1.2.3.ORPHAN.1")
+        session.queue.put(("1.2.3.ORPHAN.1", inst))
+        scp.signal_end(scp_key)
+
+        consumer.join(timeout=10)
+        assert not consumer.is_alive()
+        assert isinstance(result.get("error"), AssociationError)
+        assert cache._index.series_expected_count(study, series) is None
+        assert cache.series_cached(study, series) is False
+    finally:
+        release.set()  # let the orphaned driver thread finish and die
+        scp.stop()
+        cache.shutdown()
