@@ -44,7 +44,11 @@ implementations.
 - `DicomCache` (`_cache.py`) — two-tier (memory + disk) backed by a
   SQLite index; background disk writes run on a `ThreadPoolExecutor` so
   the same cache instance is safe to use from both the asyncio HTTP face
-  and the synchronous DIMSE C-MOVE generator.
+  and the synchronous DIMSE C-MOVE generator. The disk tier serves a
+  series only when a `series_complete` marker (written at clean
+  transport-stream end) matches the indexed row count; any desync —
+  pending tees, lost files, partial eviction, or an aborted pull — fails
+  the read and re-pulls, so a truncated series is never served.
 - `StorageSCP` (`_scp.py`) — a persistent Storage SCP whose C-STORE
   handler pushes received instances onto a queue that `PullEngine`
   streams from.
