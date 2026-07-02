@@ -63,6 +63,11 @@ class AssociationPool:
 
     @property
     def total_capacity(self) -> int:
+        """Total move-lease slots (``len(aets) * per_aet_cap``).
+
+        Find leases are capped separately (``per_aet_find_cap`` per AET)
+        and are not counted here.
+        """
         return len(self._pooled) * self._per_aet_cap
 
     def _acquire(self, timeout: float | None, kind: Literal["move", "find"]) -> _PooledAet:
