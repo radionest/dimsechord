@@ -214,8 +214,11 @@ qido = [dataset_to_qido_json(ds) async for ds in engine.stream_find(identifier, 
 `stream_find` and `PullEngine`'s `stream_series`/`stream_study` all run on
 `iter_to_aiter`, the shared sync-iterator→async-iterator bridge: a worker
 thread drives the sync generator and feeds a bounded queue, so a slow async
-consumer parks the producer thread — and, through it, the underlying socket
-read — carrying backpressure to the peer. Closing the async generator early
+consumer parks the producer thread and the bridge never buffers more than
+its queue bound. The bound is per-bridge, not end-to-end: pynetdicom's DUL
+thread still reads incoming PDUs at line speed into an unbounded internal
+queue, so it caps this library's buffering, not the peer's send rate.
+Closing the async generator early
 aborts the upstream association instead of draining the remaining responses:
 an explicit `aclose()` releases the pool lease before it returns, while a
 merely abandoned generator is finalized by the event loop shortly after.
@@ -225,6 +228,13 @@ If the deployment opted into a global cap via
 *entire* stream, not just while associating — a slow or long-lived
 `stream_find`/`stream_series`/`stream_study` consumer occupies one of those
 global slots for as long as it keeps iterating.
+
+Each live stream also pins one thread in asyncio's default executor
+(`asyncio.to_thread`; pool size `min(32, cpu_count + 4)`) for its whole
+lifetime. Budget concurrent `stream_*` consumers — AETs ×
+`per_aet_find_cap`, plus pulls, plus your application's own `to_thread`
+work — against that pool, or new `anext()` calls quietly queue until a
+worker frees up.
 
 ## DICOMweb JSON
 
@@ -274,8 +284,8 @@ cap:
 ```python
 from dimsechord import AssociationPool, PoolExhaustedError
 
-pool = AssociationPool(aets=["DEST1", "DEST2"], per_aet_cap=2)   # 2 AETs × cap 2 = 4 slots
-print(pool.aets, pool.total_capacity)
+pool = AssociationPool(aets=["DEST1", "DEST2"], per_aet_cap=2)   # 2 AETs × cap 2 = 4 move slots
+print(pool.aets, pool.total_capacity)   # total_capacity counts move slots only, not find slots
 try:
     with pool.lease(timeout=5.0) as aet:
         ...                       # use `aet` as the calling / C-MOVE destination AE title

@@ -19,8 +19,11 @@ async def iter_to_aiter[T](
     """Run a sync iterator in a worker thread and stream its items to the loop.
 
     The queue is bounded: a slow async consumer parks the producer thread,
-    which in turn parks the underlying network read — backpressure reaches the
-    peer. Closing the async generator sets a stop flag and closes the sync
+    capping how far the sync iterator runs ahead of the consumer. The bound
+    is per-bridge, not end-to-end — a DIMSE source's DUL thread still reads
+    incoming PDUs at line speed into pynetdicom's own unbounded message
+    queue, so this limits the bridge's buffering, not the peer's send rate.
+    Closing the async generator sets a stop flag and closes the sync
     generator, triggering its cleanup (e.g. association abort in ``find_iter``).
     Exceptions raised by the sync iterator re-raise in the async consumer.
     """
