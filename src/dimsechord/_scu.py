@@ -504,9 +504,9 @@ class DicomOperations:
         ae = AE(ae_title=self.calling_aet)
         ae.maximum_pdu_size = self.max_pdu
         # _association ignores config.timeout for the typed finds; the raw
-        # streaming path applies it to the ACSE/DIMSE/network timeouts —
-        # network_timeout otherwise stays at pynetdicom's 60 s default and
-        # would abort a stream idle longer than that.
+        # streaming path applies it to all three AE timeouts: dimse_timeout
+        # makes it the effective idle cap between two responses, and setting
+        # network_timeout keeps values above pynetdicom's 60 s default honored.
         ae.acse_timeout = config.timeout
         ae.dimse_timeout = config.timeout
         ae.network_timeout = config.timeout
@@ -524,6 +524,10 @@ class DicomOperations:
                             yield ident
                     elif code == 0x0000:
                         return
+                    elif code == 0xB001:
+                        # Repository Query warning: end of Pending responses,
+                        # a final Success status follows — not a failure.
+                        continue
                     else:
                         raise FindFailedError(code)
             except GeneratorExit:
