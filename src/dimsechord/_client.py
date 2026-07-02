@@ -49,8 +49,8 @@ class DicomClient:
 
         Applies to every association — find / get / move / store — including
         those opened by ``PullEngine`` (the cap is class-level on the shared
-        sync SCU). Distinct from ``AssociationPool``, which gates only C-MOVE
-        AET leases.
+        sync SCU). Distinct from ``AssociationPool``, which gates per-AET
+        C-MOVE and C-FIND leases.
 
         Call once at startup, before issuing traffic: the limit is swapped
         without a lock, so changing it mid-flight can briefly run the old

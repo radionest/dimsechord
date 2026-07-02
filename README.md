@@ -20,6 +20,8 @@ handlers, so you bring your own web layer.
 - **Two-tier cache** — in-memory + disk, backed by a SQLite instance index.
 - **Streaming pull-engine** — move-to-self retrieval streamed instance by
   instance, with per-UID request coalescing.
+- **Streaming query-engine** — raw C-FIND pass-through via `QueryEngine`,
+  streamed response by response under independent per-AET find leases.
 - **DICOMweb conversion** — DICOM ↔ DICOMweb JSON and `multipart/related`
   frame responses.
 
