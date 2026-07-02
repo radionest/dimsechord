@@ -35,8 +35,21 @@ def test_get_series_and_series_cached() -> None:
     idx.upsert(_inst("I2"))
     rows = idx.get_series("ST1", "S1")
     assert {r.sop_uid for r in rows} == {"I1", "I2"}
+    assert idx.series_cached("ST1", "S1") is False  # rows alone are not enough
+    idx.mark_series_complete("ST1", "S1", 2)
     assert idx.series_cached("ST1", "S1") is True
     assert idx.series_cached("ST1", "NOPE") is False
+
+
+def test_series_cached_false_on_count_mismatch() -> None:
+    idx = CacheIndex(":memory:")
+    idx.upsert(_inst("I1"))
+    idx.mark_series_complete("ST1", "S1", 2)  # fewer rows than marked
+    assert idx.series_cached("ST1", "S1") is False
+    idx.upsert(_inst("I2"))
+    assert idx.series_cached("ST1", "S1") is True
+    idx.upsert(_inst("I3"))  # more rows than marked
+    assert idx.series_cached("ST1", "S1") is False
 
 
 def test_total_size() -> None:

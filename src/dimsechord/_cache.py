@@ -157,7 +157,7 @@ class DicomCache:
         return ds
 
     def series_cached(self, study_uid: str, series_uid: str) -> bool:
-        """Whether the disk tier holds at least one instance of the series."""
+        """Whether the disk tier holds the complete series (no file I/O performed)."""
         return self._index.series_cached(study_uid, series_uid)
 
     def mark_series_complete(self, study_uid: str, series_uid: str, expected_count: int) -> None:
