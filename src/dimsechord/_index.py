@@ -25,6 +25,14 @@ CREATE TABLE IF NOT EXISTS instances (
 CREATE INDEX IF NOT EXISTS idx_series ON instances(study_uid, series_uid);
 CREATE INDEX IF NOT EXISTS idx_cached_at ON instances(cached_at);
 CREATE INDEX IF NOT EXISTS idx_last_accessed ON instances(last_accessed);
+-- A series row exists only after a transport stream delivered it fully.
+CREATE TABLE IF NOT EXISTS series_complete (
+    study_uid      TEXT NOT NULL,
+    series_uid     TEXT NOT NULL,
+    expected_count INTEGER NOT NULL,
+    completed_at   REAL NOT NULL,
+    PRIMARY KEY (study_uid, series_uid)
+);
 """
 
 
@@ -118,6 +126,44 @@ class CacheIndex:
                 (study_uid, series_uid),
             )
             return cur.fetchone() is not None
+
+    def mark_series_complete(
+        self, study_uid: str, series_uid: str, expected_count: int, now: float | None = None
+    ) -> None:
+        """Record that the disk tier holds the full series (expected_count instances)."""
+        if expected_count < 1:
+            raise ValueError(f"expected_count must be >= 1, got {expected_count}")
+        ts = time.time() if now is None else now
+        with self._lock:
+            self._conn.execute(
+                """
+                INSERT OR REPLACE INTO series_complete
+                  (study_uid, series_uid, expected_count, completed_at)
+                VALUES (?, ?, ?, ?)
+                """,
+                (study_uid, series_uid, expected_count, ts),
+            )
+            self._conn.commit()
+
+    def series_expected_count(self, study_uid: str, series_uid: str) -> int | None:
+        """Expected instance count of a complete series, or None if never marked."""
+        with self._lock:
+            cur = self._conn.execute(
+                "SELECT expected_count FROM series_complete"
+                " WHERE study_uid = ? AND series_uid = ?",
+                (study_uid, series_uid),
+            )
+            row = cur.fetchone()
+        return int(row["expected_count"]) if row is not None else None
+
+    def clear_series_complete(self, study_uid: str, series_uid: str) -> None:
+        """Drop the completeness marker (e.g. after evicting any of its instances)."""
+        with self._lock:
+            self._conn.execute(
+                "DELETE FROM series_complete WHERE study_uid = ? AND series_uid = ?",
+                (study_uid, series_uid),
+            )
+            self._conn.commit()
 
     def touch(self, sop_uid: str, now: float | None = None) -> None:
         ts = time.time() if now is None else now

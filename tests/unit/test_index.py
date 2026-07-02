@@ -1,3 +1,7 @@
+import sqlite3
+
+import pytest
+
 from dimsechord._index import CacheIndex, IndexedInstance
 
 
@@ -78,3 +82,52 @@ def test_delete() -> None:
     idx.upsert(_inst("I1"))
     idx.delete("I1")
     assert idx.get_instance("I1") is None
+
+
+def test_mark_series_complete_roundtrip() -> None:
+    idx = CacheIndex(":memory:")
+    assert idx.series_expected_count("ST1", "S1") is None
+    idx.mark_series_complete("ST1", "S1", 2)
+    assert idx.series_expected_count("ST1", "S1") == 2
+
+
+def test_mark_series_complete_replaces_count() -> None:
+    idx = CacheIndex(":memory:")
+    idx.mark_series_complete("ST1", "S1", 2)
+    idx.mark_series_complete("ST1", "S1", 3)
+    assert idx.series_expected_count("ST1", "S1") == 3
+
+
+def test_clear_series_complete() -> None:
+    idx = CacheIndex(":memory:")
+    idx.mark_series_complete("ST1", "S1", 2)
+    idx.clear_series_complete("ST1", "S1")
+    assert idx.series_expected_count("ST1", "S1") is None
+    idx.clear_series_complete("ST1", "NEVER_MARKED")  # no-op, must not raise
+
+
+def test_mark_series_complete_rejects_non_positive_count() -> None:
+    idx = CacheIndex(":memory:")
+    with pytest.raises(ValueError, match="expected_count"):
+        idx.mark_series_complete("ST1", "S1", 0)
+
+
+def test_schema_migrates_pre_existing_db(tmp_path) -> None:
+    """A DB created before series_complete existed gains the table on reopen."""
+    db = tmp_path / "index.db"
+    conn = sqlite3.connect(db)
+    conn.executescript(
+        """
+        CREATE TABLE instances (
+            sop_uid TEXT PRIMARY KEY, study_uid TEXT NOT NULL, series_uid TEXT NOT NULL,
+            file_path TEXT NOT NULL, size INTEGER NOT NULL, cached_at REAL NOT NULL,
+            last_accessed REAL NOT NULL, source TEXT NOT NULL
+        );
+        """
+    )
+    conn.commit()
+    conn.close()
+    idx = CacheIndex(db)
+    assert idx.series_expected_count("ST1", "S1") is None
+    idx.mark_series_complete("ST1", "S1", 2)
+    assert idx.series_expected_count("ST1", "S1") == 2
