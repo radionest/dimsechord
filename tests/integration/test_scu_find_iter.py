@@ -94,6 +94,30 @@ def test_find_iter_raises_on_failure_status(fake_pacs) -> None:
     assert ei.value.status == 0xA700
 
 
+def test_find_iter_continues_past_repository_query_warning(monkeypatch) -> None:
+    ops = DicomOperations(calling_aet="TESTSCU")
+    pending = Dataset()
+    pending.Status = 0xFF00
+    warn = Dataset()
+    warn.Status = 0xB001  # Repository Query: end of Pending responses, not a failure
+    done = Dataset()
+    done.Status = 0x0000
+    ident = Dataset()
+    ident.PatientID = "P1"
+    responses = [(pending, ident), (warn, None), (done, None)]
+
+    @contextmanager
+    def fake_association(_ae, _config):
+        yield SimpleNamespace(send_c_find=lambda _i, _m: iter(responses))
+
+    monkeypatch.setattr(ops, "_association", fake_association)
+    cfg = AssociationConfig(
+        calling_aet="TESTSCU", called_aet="PACS", peer_host="127.0.0.1", peer_port=1
+    )
+    out = list(ops.find_iter(cfg, _identifier(), FIND))
+    assert [str(d.PatientID) for d in out] == ["P1"]
+
+
 def test_find_iter_applies_config_timeout_to_ae(monkeypatch) -> None:
     ops = DicomOperations(calling_aet="TESTSCU")
     seen: dict[str, object] = {}
