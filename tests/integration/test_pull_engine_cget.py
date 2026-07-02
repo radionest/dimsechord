@@ -104,3 +104,35 @@ def test_partial_cget_does_not_poison_cache(
     cache.flush_pending_writes()
     assert cache.get_series_from_memory(study, series) is None, "memory cache must be clean"
     assert cache.series_cached(study, series) is False, "disk cache must be clean"
+
+
+@pytest.mark.timeout(60)
+def test_nonsuccess_status_cget_does_not_poison_cache(
+    cget_engine, seeded_study, monkeypatch
+) -> None:
+    """A C-GET ending in a non-success status with num_failed=0 and k<N instances
+    (mid-transfer abort/refuse) must raise AssociationError, not certify a truncated
+    series complete — mirrors the C-MOVE success-status guard (issue #15)."""
+    eng, cache = cget_engine
+    study = seeded_study["study"][0]
+    series = seeded_study["series"][0]
+    sop = seeded_study[series][0]
+    partial_instance = make_instance(study, series, sop)
+
+    def _stubbed_retrieve_via_get(_self, _config, _request, _storage, _on_progress=None):
+        return RetrieveResult(
+            status="pending",
+            num_completed=1,
+            num_failed=0,
+            instances={sop: partial_instance},
+        )
+
+    monkeypatch.setattr(DicomOperations, "retrieve_via_get", _stubbed_retrieve_via_get)
+
+    with pytest.raises(AssociationError, match="C-GET ended with non-success status"):
+        list(eng.iter_series(study, series))
+
+    cache.flush_pending_writes()
+    assert cache.get_series_from_memory(study, series) is None, "memory cache must be clean"
+    assert cache._index.series_expected_count(study, series) is None, "no completeness marker"
+    assert cache.series_cached(study, series) is False, "disk cache must be clean"

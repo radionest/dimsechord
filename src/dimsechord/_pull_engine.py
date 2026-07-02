@@ -200,6 +200,12 @@ class _CGetTransport:
                 f"C-GET incomplete: {result.num_failed} sub-operation(s) failed "
                 f"({result.num_completed} completed) — not caching a partial series."
             )
+        if result.status != "success":
+            raise AssociationError(
+                f"C-GET ended with non-success status {result.status!r} "
+                f"({result.num_completed} completed) — the retrieve was aborted, "
+                "refused, or left undetermined; not caching a partial series."
+            )
         yield from result.instances.items()
 
 
