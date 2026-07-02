@@ -6,6 +6,8 @@ paths:
   - "src/dimsechord/_pull_engine.py"
   - "src/dimsechord/_cache.py"
   - "src/dimsechord/_handlers.py"
+  - "src/dimsechord/_bridge.py"
+  - "src/dimsechord/_query_engine.py"
 ---
 
 # Concurrency model: sync core, thin async adapters
