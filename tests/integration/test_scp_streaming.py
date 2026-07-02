@@ -124,6 +124,28 @@ def test_signal_end_pushes_sentinel(running_scp, seeded_study) -> None:
     assert session.queue.get(timeout=2) is None
 
 
+@pytest.mark.timeout(10)
+def test_completion_by_session_end_does_not_count_as_arrival() -> None:
+    """A ``done`` event fired by shutdown/session-end (``stop``/``signal_end``) with an
+    unmet expectation must read as incomplete, so a truncated series is never certified
+    complete (issue #15). ``signal_end`` sets the same ``ended`` + ``done`` state per
+    session that ``stop`` broadcasts, so it exercises the same race deterministically."""
+    scp = StorageSCP()
+
+    # Only k<N arrived, so ``done`` is NOT set by arrival; session-end sets it instead.
+    scp.register_session("study/short")
+    scp.set_expected("study/short", 3)  # expect 3; none arrived
+    scp.signal_end("study/short")  # end-of-stream: sets ended + done, keeps the session
+    assert scp.wait_for_completion("study/short", timeout=0.5) is False
+
+    # Positive control: a genuine arrival (``done`` from a count match, ended False)
+    # must still read as complete — the guard must not break normal completion.
+    session = scp.register_session("study/full")
+    session.received_count = 2
+    scp.set_expected("study/full", 2)  # received >= expected → done set, ended stays False
+    assert scp.wait_for_completion("study/full", timeout=0.5) is True
+
+
 def test_register_duplicate_key_raises(running_scp) -> None:
     scp, _ = running_scp
     scp.register_session("dup")
