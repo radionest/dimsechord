@@ -14,10 +14,11 @@ class PoolExhaustedError(DimsechordError):
 
 
 class MoveToSelfError(DimsechordError):
-    """A C-MOVE-to-self completed but no instances arrived on the Storage SCP.
+    """A C-MOVE-to-self completed reporting zero sub-operations.
 
-    Signals the classic silent failure: the PACS is not configured to route
-    the destination AET back to us.
+    The query matched nothing on the PACS, so no C-STORE was ever sent.
+    Under-delivery or misrouting — the PACS reports sub-operations that never
+    arrive on the Storage SCP — surfaces as ``AssociationError``, not this.
     """
 
 
