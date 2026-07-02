@@ -3,6 +3,8 @@
 Synchronous and thread-safe: background disk writes run on a thread pool, so the
 cache is usable identically from the asyncio HTTP face and from the synchronous
 DIMSE C-MOVE generator (a pynetdicom worker thread).
+The disk tier serves a series only when a completeness marker recorded at
+fetch time matches the indexed rows; partial tee leftovers are never served.
 """
 
 from __future__ import annotations
@@ -113,19 +115,34 @@ class DicomCache:
 
     # ── disk tier (index-backed) ─────────────────────────────────
     def load_series_from_disk(self, study_uid: str, series_uid: str) -> dict[str, Dataset] | None:
+        """Load a series from the disk tier, or None unless it is verifiably complete.
+
+        Requires the completeness marker, an exact instance-row count match, and
+        every file readable — a partial series is never returned (issue #15).
+        """
+        expected = self._index.series_expected_count(study_uid, series_uid)
+        if expected is None:
+            return None
         rows = self._index.get_series(study_uid, series_uid)
-        if not rows:
+        if len(rows) != expected:
+            logger.info(
+                f"Disk series {study_uid}/{series_uid} incomplete: "
+                f"{len(rows)} rows vs {expected} expected — ignoring"
+            )
             return None
         instances: dict[str, Dataset] = {}
         for row in rows:
             try:
                 ds = pydicom.dcmread(row.file_path)
             except Exception as e:
-                logger.warning(f"Skipping unreadable cached file {row.file_path}: {e}")
-                continue
+                logger.info(
+                    f"Disk series {study_uid}/{series_uid} has unreadable file "
+                    f"{row.file_path}: {e} — ignoring"
+                )
+                return None
             instances[str(ds.SOPInstanceUID)] = ds
             self._index.touch(row.sop_uid)
-        return instances or None
+        return instances
 
     def read_instance(self, study_uid: str, series_uid: str, sop_uid: str) -> Dataset | None:  # noqa: ARG002
         row = self._index.get_instance(sop_uid)
