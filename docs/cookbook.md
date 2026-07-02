@@ -310,7 +310,8 @@ try:
     async for ds in engine.stream_series(study_uid, series_uid):
         ...
 except MoveToSelfError:
-    ...      # C-MOVE finished but nothing arrived — the PACS isn't routing the AET back
+    ...      # C-MOVE matched nothing — it completed reporting zero sub-operations
+             # (routing misconfig, where reported instances never arrive, is AssociationError)
 except ArrivalTimeoutError:
     ...      # the gap between two instances exceeded arrival_timeout
 except DimsechordError:
@@ -322,5 +323,5 @@ except DimsechordError:
 | `AssociationError` | an association fails, or a C-GET/C-STORE/C-MOVE sub-operation fails — including a C-MOVE that ends on a non-success status or under-delivers |
 | `FindFailedError` | a raw streaming C-FIND (`iter_find`/`stream_find`) ends with a non-success DIMSE status |
 | `PoolExhaustedError` | `AssociationPool.lease` — or `lease_find`, on the first iteration of `iter_find`/`stream_find` — times out with no free slot |
-| `MoveToSelfError` | a C-MOVE completes but zero instances arrive |
+| `MoveToSelfError` | a C-MOVE completes reporting zero sub-operations — the query matched nothing (under-delivery/misrouting is `AssociationError`) |
 | `ArrivalTimeoutError` | no instance arrives within the configured `arrival_timeout` |
