@@ -2,10 +2,11 @@ import pytest
 
 from dimsechord._cache import DicomCache
 from dimsechord._exceptions import AssociationError, MoveToSelfError
-from dimsechord._models import DicomNode
+from dimsechord._models import DicomNode, RetrieveResult
 from dimsechord._pool import AssociationPool
 from dimsechord._pull_engine import PullEngine
 from dimsechord._scp import StorageSCP
+from dimsechord._scu import DicomOperations
 
 
 @pytest.fixture
@@ -111,6 +112,28 @@ def test_real_move_failure_raises_association_error(free_port, tmp_path) -> None
     finally:
         scp.stop()
         cache.shutdown()
+
+
+@pytest.mark.timeout(90)
+def test_move_under_delivery_raises_association_error(monkeypatch, engine, seeded_study) -> None:
+    """Issue #15 blocker: failed C-MOVE sub-operations must not be cached as complete.
+
+    Mirrors the C-GET transport guard: move_study() returning num_failed > 0
+    must end the stream with AssociationError, not a clean finish.
+    """
+    eng, cache = engine
+    study, series = seeded_study["study"][0], seeded_study["series"][0]
+
+    def fake_move_study(self, config, request, destination_aet):  # noqa: ARG001
+        return RetrieveResult(status="success", num_completed=1, num_failed=1)
+
+    monkeypatch.setattr(DicomOperations, "move_study", fake_move_study)
+
+    with pytest.raises(AssociationError):
+        list(eng.iter_series(study, series))
+
+    assert cache._index.series_expected_count(study, series) is None
+    assert cache.series_cached(study, series) is False
 
 
 @pytest.mark.timeout(90)
