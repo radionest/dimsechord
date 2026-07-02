@@ -12,7 +12,6 @@ cache tiers and per-UID coalescing stay in the engine.
 
 from __future__ import annotations
 
-import asyncio
 import logging
 import queue
 import threading
@@ -20,6 +19,7 @@ import time
 from typing import TYPE_CHECKING
 from weakref import WeakValueDictionary
 
+from dimsechord._bridge import iter_to_aiter
 from dimsechord._cache import MemoryCachedSeries
 from dimsechord._exceptions import ArrivalTimeoutError, AssociationError, MoveToSelfError
 from dimsechord._models import (
@@ -33,7 +33,7 @@ from dimsechord._models import (
 from dimsechord._scu import DicomOperations
 
 if TYPE_CHECKING:
-    from collections.abc import AsyncIterator, Callable, Iterator
+    from collections.abc import AsyncIterator, Iterator
 
     from pydicom import Dataset
 
@@ -335,13 +335,13 @@ class PullEngine:
     async def stream_series(
         self, study_uid: str, series_uid: str
     ) -> AsyncIterator[Dataset]:
-        async for ds in self._bridge(lambda: self.iter_series(study_uid, series_uid)):
+        async for ds in iter_to_aiter(lambda: self.iter_series(study_uid, series_uid)):
             yield ds
 
     async def stream_study(
         self, study_uid: str, series_uids: list[str]
     ) -> AsyncIterator[Dataset]:
-        async for ds in self._bridge(lambda: self.iter_study(study_uid, series_uids)):
+        async for ds in iter_to_aiter(lambda: self.iter_study(study_uid, series_uids)):
             yield ds
 
     async def ensure_series(self, study_uid: str, series_uid: str) -> MemoryCachedSeries:
@@ -361,32 +361,3 @@ class PullEngine:
         return self._cache.put_series_to_memory(
             study_uid, series_uid, instances, disk_persisted=False
         )
-
-    async def _bridge(
-        self, make_iter: Callable[[], Iterator[Dataset]]
-    ) -> AsyncIterator[Dataset]:
-        """Run a sync iterator in a worker thread, stream its items to the loop."""
-        loop = asyncio.get_running_loop()
-        aq: asyncio.Queue[Dataset | BaseException | object] = asyncio.Queue()
-        sentinel = object()
-
-        def _producer() -> None:
-            try:
-                for ds in make_iter():
-                    loop.call_soon_threadsafe(aq.put_nowait, ds)
-            except BaseException as e:  # propagate to the async consumer
-                loop.call_soon_threadsafe(aq.put_nowait, e)
-            finally:
-                loop.call_soon_threadsafe(aq.put_nowait, sentinel)
-
-        task = asyncio.create_task(asyncio.to_thread(_producer))
-        try:
-            while True:
-                item = await aq.get()
-                if item is sentinel:
-                    break
-                if isinstance(item, BaseException):
-                    raise item
-                yield item  # type: ignore[misc]
-        finally:
-            await task
