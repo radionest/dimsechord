@@ -143,6 +143,10 @@ class DicomCache:
         """Whether the disk tier holds at least one instance of the series."""
         return self._index.series_cached(study_uid, series_uid)
 
+    def mark_series_complete(self, study_uid: str, series_uid: str, expected_count: int) -> None:
+        """Record that the disk tier holds the full series (expected_count instances)."""
+        self._index.mark_series_complete(study_uid, series_uid, expected_count)
+
     # ── tee (synchronous + thread-pool background) ───────────────
     def write_instance(
         self, study_uid: str, series_uid: str, sop_uid: str, ds: Dataset, source: str = "pacs"

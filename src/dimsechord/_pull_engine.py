@@ -314,23 +314,24 @@ class PullEngine:
             self._cache.schedule_tee(study_uid, ser, sop_uid, ds, source="pacs")
             yield ds
         if collected:
-            self._populate_memory(study_uid, series_uid, collected)
+            self._finalize_fetch(study_uid, series_uid, collected)
 
-    def _populate_memory(
+    def _finalize_fetch(
         self, study_uid: str, series_uid: str | None, collected: dict[str, Dataset]
     ) -> None:
+        """Commit a cleanly completed fetch: memory tier + disk completeness marker."""
+        grouped: dict[str, dict[str, Dataset]]
         if series_uid is not None:
-            self._cache.put_series_to_memory(
-                study_uid, series_uid, collected, disk_persisted=False
-            )
-            return
-        grouped: dict[str, dict[str, Dataset]] = {}
-        for sop_uid, ds in collected.items():
-            grouped.setdefault(str(ds.SeriesInstanceUID), {})[sop_uid] = ds
+            grouped = {series_uid: collected}
+        else:
+            grouped = {}
+            for sop_uid, ds in collected.items():
+                grouped.setdefault(str(ds.SeriesInstanceUID), {})[sop_uid] = ds
         for ser_uid, instances in grouped.items():
             self._cache.put_series_to_memory(
                 study_uid, ser_uid, instances, disk_persisted=False
             )
+            self._cache.mark_series_complete(study_uid, ser_uid, len(instances))
 
     # ── async adapters (used by the HTTP face) ───────────────────
     async def stream_series(
