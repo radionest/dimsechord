@@ -14,7 +14,9 @@ DIMSE networking here, only format conversion.
 - Converts to **DICOM JSON** per the DICOMweb standard, **PS3.18
   Appendix F**.
 - Accepts both raw pydicom `Dataset` objects (`dataset_to_dicom_json`,
-  `convert_datasets_to_dicom_json`) and this package's own dataclass
+  `convert_datasets_to_dicom_json`, and the QIDO variant
+  `dataset_to_qido_json`, which injects no `BulkDataURI`) and this
+  package's own dataclass
   results — `study_result_to_dicom_json`, `series_result_to_dicom_json`,
   `image_result_to_dicom_json` take `StudyResult`/`SeriesResult`/
   `ImageResult` (`_models.py`).

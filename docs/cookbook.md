@@ -185,7 +185,10 @@ async for ds in engine.stream_find(identifier, model=FIND):
 Find leases (`per_aet_find_cap`, default 4) are a cap independent of move
 leases (`per_aet_cap`) on the same pool — `lease_find` neither blocks nor is
 blocked by `lease`/C-MOVE-to-self traffic, matching a PACS's tolerance for
-several concurrent C-FIND associations per AET. A non-success final DIMSE
+several concurrent C-FIND associations per AET. The lease is acquired
+lazily: `iter_find`/`stream_find` only build the generator, and the lease —
+with any `PoolExhaustedError` — surfaces on the first `next()`/`anext()`,
+not at the call itself. A non-success final DIMSE
 status raises `FindFailedError`, carrying the status code as `.status`:
 
 ```python
@@ -290,7 +293,7 @@ specific failure:
 ```python
 from dimsechord import (
     DimsechordError, ArrivalTimeoutError, MoveToSelfError,
-    AssociationError, PoolExhaustedError,
+    AssociationError, FindFailedError, PoolExhaustedError,
 )
 
 try:
@@ -307,6 +310,7 @@ except DimsechordError:
 | Exception | Raised when |
 | --- | --- |
 | `AssociationError` | an association or C-GET/C-STORE sub-operation fails |
-| `PoolExhaustedError` | `AssociationPool.lease` times out with no free slot |
+| `FindFailedError` | a raw streaming C-FIND (`iter_find`/`stream_find`) ends with a non-success DIMSE status |
+| `PoolExhaustedError` | `AssociationPool.lease` — or `lease_find`, on the first iteration of `iter_find`/`stream_find` — times out with no free slot |
 | `MoveToSelfError` | a C-MOVE completes but zero instances arrive |
 | `ArrivalTimeoutError` | no instance arrives within the configured `arrival_timeout` |
