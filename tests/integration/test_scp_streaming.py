@@ -1,3 +1,5 @@
+from types import SimpleNamespace
+
 import pytest
 from pynetdicom import AE
 from pynetdicom.sop_class import MRImageStorage  # type: ignore[attr-defined]
@@ -144,6 +146,41 @@ def test_completion_by_session_end_does_not_count_as_arrival() -> None:
     session.received_count = 2
     scp.set_expected("study/full", 2)  # received >= expected → done set, ended stays False
     assert scp.wait_for_completion("study/full", timeout=0.5) is True
+
+
+@pytest.mark.timeout(10)
+def test_store_item_enqueued_before_done_fires(seeded_study) -> None:
+    """The C-STORE item must reach the queue before ``done`` fires (issue #15).
+
+    On the final instance of a successful C-MOVE, ``done`` firing lets the driver's
+    ``wait_for_completion`` return and run ``signal_end``, enqueuing the ``None``
+    sentinel. If ``done`` is set before the item is queued, that sentinel can overtake
+    the item: the consumer breaks on the sentinel having yielded N-1 of N and
+    ``_finalize_fetch`` durably certifies the short series. Assert the item is already
+    queued at the instant ``done`` fires.
+    """
+    scp = StorageSCP()
+    study = seeded_study["study"][0]
+    series = seeded_study["series"][0]
+    key = f"{study}/{series}"
+    session = scp.register_session(key)
+    scp.set_expected(key, 1)  # a single instance completes the session → fires done
+
+    qsize_at_done: list[int] = []
+    real_set = session.done.set
+
+    def recording_set() -> None:
+        qsize_at_done.append(session.queue.qsize())
+        real_set()
+
+    session.done.set = recording_set  # type: ignore[method-assign]
+
+    ds = make_instance(study, series, seeded_study[series][0])
+    event = SimpleNamespace(dataset=ds, file_meta=ds.file_meta)
+    assert scp._handle_store(event) == 0x0000
+
+    assert session.done.is_set()  # done did fire (expectation met)
+    assert qsize_at_done == [1]  # ...but only after the item was already on the queue
 
 
 def test_register_duplicate_key_raises(running_scp) -> None:
