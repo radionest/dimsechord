@@ -230,10 +230,14 @@ class DicomCache:
     # ── eviction (index-driven) ──────────────────────────────────
     def _remove_rows(self, rows: list[IndexedInstance]) -> int:
         study_dirs: set[Path] = set()
+        touched_series: set[tuple[str, str]] = set()
         for row in rows:
             Path(row.file_path).unlink(missing_ok=True)
             self._index.delete(row.sop_uid)
             study_dirs.add(self._series_dir(row.study_uid, row.series_uid))
+            touched_series.add((row.study_uid, row.series_uid))
+        for study_uid, series_uid in touched_series:
+            self._index.clear_series_complete(study_uid, series_uid)
         self._cleanup_empty_dirs(study_dirs)
         return len(rows)
 
