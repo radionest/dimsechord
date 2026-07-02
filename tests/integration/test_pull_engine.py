@@ -135,3 +135,47 @@ def test_study_pull_marks_each_series_complete(engine, seeded_study) -> None:
     assert len(received) == len(seeded_study[s1]) + len(seeded_study[s2])
     assert cache._index.series_expected_count(study, s1) == len(seeded_study[s1])
     assert cache._index.series_expected_count(study, s2) == len(seeded_study[s2])
+
+
+@pytest.mark.timeout(90)
+def test_aborted_stream_not_served_from_disk(engine, seeded_study, fake_pacs) -> None:
+    """Issue #15 e2e: a consumer abandoning the stream must not poison the disk tier."""
+    eng, cache = engine
+    study, series = seeded_study["study"][0], seeded_study["series"][0]
+
+    gen = eng.iter_series(study, series)
+    next(gen)
+    gen.close()  # early disconnect after 1 of 2 instances
+
+    cache.flush_pending_writes()
+    assert len(cache._index.get_series(study, series)) == 1  # partial tee leftover
+    assert cache.series_cached(study, series) is False
+    assert cache.load_series_from_disk(study, series) is None
+    assert cache.get_series_from_memory(study, series) is None
+
+    moves_before = len(fake_pacs.moves)
+    received = list(eng.iter_series(study, series))
+    assert len(fake_pacs.moves) == moves_before + 1  # re-pulled, not served from disk
+    assert {str(ds.SOPInstanceUID) for ds in received} == set(seeded_study[series])
+
+    cache.flush_pending_writes()
+    assert cache.series_cached(study, series) is True
+
+
+@pytest.mark.timeout(90)
+def test_complete_series_served_from_disk_without_transport(
+    engine, seeded_study, fake_pacs
+) -> None:
+    eng, cache = engine
+    study, series = seeded_study["study"][0], seeded_study["series"][0]
+
+    _ = list(eng.iter_series(study, series))
+    cache.flush_pending_writes()
+    cache._memory_cache.clear()  # expire the memory tier; disk must serve alone
+
+    moves_before = len(fake_pacs.moves)
+    received = list(eng.iter_series(study, series))
+    assert {str(ds.SOPInstanceUID) for ds in received} == set(seeded_study[series])
+    assert len(fake_pacs.moves) == moves_before  # no new C-MOVE
+    promoted = cache.get_series_from_memory(study, series)
+    assert promoted is not None and promoted.disk_persisted is True
