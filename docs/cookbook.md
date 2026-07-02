@@ -320,7 +320,7 @@ except DimsechordError:
 
 | Exception | Raised when |
 | --- | --- |
-| `AssociationError` | an association fails, or a C-GET/C-STORE/C-MOVE sub-operation fails — including a C-MOVE that ends on a non-success status or under-delivers |
+| `AssociationError` | an association fails, or a C-GET/C-STORE/C-MOVE sub-operation fails — including a C-MOVE or C-GET that ends on a non-success status, or a C-MOVE that under-delivers |
 | `FindFailedError` | a raw streaming C-FIND (`iter_find`/`stream_find`) ends with a non-success DIMSE status |
 | `PoolExhaustedError` | `AssociationPool.lease` — or `lease_find`, on the first iteration of `iter_find`/`stream_find` — times out with no free slot |
 | `MoveToSelfError` | a C-MOVE completes reporting zero sub-operations — the query matched nothing (under-delivery/misrouting is `AssociationError`) |
