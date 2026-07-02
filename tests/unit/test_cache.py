@@ -82,6 +82,23 @@ def test_evict_by_size(cache) -> None:
     assert removed >= 1
 
 
+def test_eviction_clears_completeness_marker(cache) -> None:
+    for i in ("I1", "I2"):
+        cache.write_instance("ST", "SE", i, make_instance("ST", "SE", i))
+    cache.mark_series_complete("ST", "SE", 2)
+    assert cache.series_cached("ST", "SE") is True
+
+    # Age one instance so TTL eviction removes it (pattern from test_evict_expired_*).
+    row = cache._index.get_instance("I1")
+    cache._index.upsert(dataclasses.replace(row, cached_at=0.0))
+    removed = cache.evict_expired()
+    assert removed == 1
+
+    assert cache._index.series_expected_count("ST", "SE") is None  # marker dropped
+    assert cache.series_cached("ST", "SE") is False
+    assert cache.load_series_from_disk("ST", "SE") is None
+
+
 def test_load_series_without_marker_returns_none(cache) -> None:
     """Issue #15 regression: aborted-stream tee leftovers must not be served."""
     for i in ("I1", "I2"):
