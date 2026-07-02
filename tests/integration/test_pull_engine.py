@@ -111,3 +111,27 @@ def test_real_move_failure_raises_association_error(free_port, tmp_path) -> None
     finally:
         scp.stop()
         cache.shutdown()
+
+
+@pytest.mark.timeout(90)
+def test_full_pull_marks_series_complete(engine, seeded_study) -> None:
+    """A cleanly exhausted stream records the series as complete on disk."""
+    eng, cache = engine
+    study, series = seeded_study["study"][0], seeded_study["series"][0]
+
+    received = list(eng.iter_series(study, series))
+    assert len(received) == len(seeded_study[series])
+    # Marker is written synchronously at stream end — no flush needed.
+    assert cache._index.series_expected_count(study, series) == len(seeded_study[series])
+
+
+@pytest.mark.timeout(90)
+def test_study_pull_marks_each_series_complete(engine, seeded_study) -> None:
+    eng, cache = engine
+    study = seeded_study["study"][0]
+    s1, s2 = seeded_study["series"]
+
+    received = list(eng.iter_study(study, [s1, s2]))
+    assert len(received) == len(seeded_study[s1]) + len(seeded_study[s2])
+    assert cache._index.series_expected_count(study, s1) == len(seeded_study[s1])
+    assert cache._index.series_expected_count(study, s2) == len(seeded_study[s2])
