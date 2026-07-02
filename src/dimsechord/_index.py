@@ -1,4 +1,8 @@
-"""SQLite instance-level cache index (study/series/instance rows)."""
+"""SQLite instance-level cache index (study/series/instance rows).
+
+Also holds the ``series_complete`` table, a per-series completeness marker
+written only once a transport stream has delivered a series in full.
+"""
 
 from __future__ import annotations
 
