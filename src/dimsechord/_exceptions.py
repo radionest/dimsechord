@@ -23,3 +23,11 @@ class MoveToSelfError(DimsechordError):
 
 class ArrivalTimeoutError(DimsechordError):
     """No instance arrived on the Storage SCP within the per-instance timeout."""
+
+
+class FindFailedError(DimsechordError):
+    """A C-FIND ended with a non-success final DIMSE status."""
+
+    def __init__(self, status: int) -> None:
+        super().__init__(f"C-FIND failed with DIMSE status 0x{status:04X}")
+        self.status = status
