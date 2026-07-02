@@ -137,6 +137,64 @@ def test_move_under_delivery_raises_association_error(monkeypatch, engine, seede
 
 
 @pytest.mark.timeout(90)
+def test_move_nonsuccess_status_not_marked_complete(monkeypatch, engine, seeded_study) -> None:
+    """Issue #15 blocker: a non-success terminal C-MOVE status must not be cached.
+
+    A peer that aborts/refuses after k of N deliveries leaves the response stream
+    ending on a still-``pending`` (or warning) status with num_failed unset. That
+    must raise, not finish the stream cleanly and mark the partial series complete.
+    """
+    eng, cache = engine
+    study, series = seeded_study["study"][0], seeded_study["series"][0]
+
+    def fake_move_study(self, config, request, destination_aet):  # noqa: ARG001
+        return RetrieveResult(status="pending", num_completed=1, num_failed=0)
+
+    monkeypatch.setattr(DicomOperations, "move_study", fake_move_study)
+
+    with pytest.raises(AssociationError):
+        list(eng.iter_series(study, series))
+
+    assert cache._index.series_expected_count(study, series) is None
+    assert cache.series_cached(study, series) is False
+
+
+@pytest.mark.timeout(30)
+def test_move_arrival_shortfall_not_marked_complete(monkeypatch, free_port, tmp_path) -> None:
+    """Issue #15 blocker: status success but the instances never physically arrive.
+
+    move_study reports 2 completed sub-ops, yet no C-STORE reaches the SCP within
+    the completion grace. The shortfall must raise, not finish cleanly and certify
+    a short series. Uses a dedicated engine with a small grace to stay fast.
+    """
+    scp_port = free_port()
+    pool = AssociationPool(aets=["SHORTPOOL"], per_aet_cap=1)
+    scp = StorageSCP()
+    scp.start({"SHORTPOOL": scp_port})
+    cache = DicomCache(base_dir=tmp_path / "cache", index_path=tmp_path / "index.db")
+    pacs = DicomNode(aet="PACS", host="127.0.0.1", port=free_port())
+    eng = PullEngine(
+        pool=pool, scp=scp, cache=cache, pacs=pacs,
+        cmove_timeout=5.0, arrival_timeout=5.0, completion_grace=0.5,
+    )
+
+    def fake_move_study(self, config, request, destination_aet):  # noqa: ARG001
+        return RetrieveResult(status="success", num_completed=2, num_failed=0)
+
+    monkeypatch.setattr(DicomOperations, "move_study", fake_move_study)
+
+    study, series = "9.9.9.SHORT", "8.8.8.SHORT"
+    try:
+        with pytest.raises(AssociationError):
+            list(eng.iter_series(study, series))
+        assert cache._index.series_expected_count(study, series) is None
+        assert cache.series_cached(study, series) is False
+    finally:
+        scp.stop()
+        cache.shutdown()
+
+
+@pytest.mark.timeout(90)
 def test_full_pull_marks_series_complete(engine, seeded_study) -> None:
     """A cleanly exhausted stream records the series as complete on disk."""
     eng, cache = engine

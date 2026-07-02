@@ -136,9 +136,20 @@ class _MoveToSelfTransport:
                         f"C-MOVE incomplete: {result.num_failed} sub-operation(s) failed "
                         f"({result.num_completed} completed) — not caching a partial series."
                     )
+                if result.status != "success":
+                    raise AssociationError(
+                        f"C-MOVE ended with non-success status {result.status!r} "
+                        f"({result.num_completed} completed) — the move was aborted, "
+                        "refused, or left undetermined; not caching a partial series."
+                    )
                 if result.num_completed:
                     self._scp.set_expected(scp_key, result.num_completed)
-                    self._scp.wait_for_completion(scp_key, self._completion_grace)
+                    if not self._scp.wait_for_completion(scp_key, self._completion_grace):
+                        raise AssociationError(
+                            f"C-MOVE reported {result.num_completed} completed sub-operation(s) "
+                            f"but they did not all arrive within {self._completion_grace}s — "
+                            "not caching a partial series."
+                        )
         except Exception as e:
             logger.error(f"C-MOVE driver failed for {scp_key}: {e}")
             error_holder.append(e)

@@ -123,13 +123,19 @@ class StorageSCP:
             if session.received_count >= count:
                 session.done.set()
 
-    def wait_for_completion(self, key: str, timeout: float) -> MoveSession | None:
+    def wait_for_completion(self, key: str, timeout: float) -> bool:
+        """Wait until the session's ``done`` event fires; return whether it did.
+
+        ``True`` means the expected C-STOREs all arrived within ``timeout`` (or
+        the session was ended/stopped); ``False`` means the grace expired first —
+        a physical-arrival shortfall — or the session is unknown. The event is
+        thread-safe, so it is awaited outside ``_lock``.
+        """
         with self._lock:
             session = self._sessions.get(key)
         if session is None:
-            return None
-        session.done.wait(timeout=timeout)
-        return session
+            return False
+        return session.done.wait(timeout=timeout)
 
     def signal_end(self, key: str) -> None:
         """Mark the session ended and push the end-of-stream sentinel."""
