@@ -120,12 +120,21 @@ class CacheIndex:
         return [_row(r) for r in rows]
 
     def series_cached(self, study_uid: str, series_uid: str) -> bool:
+        """Whether the disk tier holds the complete series (marker + row count match)."""
         with self._lock:
             cur = self._conn.execute(
-                "SELECT 1 FROM instances WHERE study_uid = ? AND series_uid = ? LIMIT 1",
+                "SELECT expected_count FROM series_complete"
+                " WHERE study_uid = ? AND series_uid = ?",
                 (study_uid, series_uid),
             )
-            return cur.fetchone() is not None
+            marker = cur.fetchone()
+            if marker is None:
+                return False
+            cur = self._conn.execute(
+                "SELECT COUNT(*) AS n FROM instances WHERE study_uid = ? AND series_uid = ?",
+                (study_uid, series_uid),
+            )
+            return int(cur.fetchone()["n"]) == int(marker["expected_count"])
 
     def mark_series_complete(
         self, study_uid: str, series_uid: str, expected_count: int, now: float | None = None
