@@ -131,6 +131,11 @@ class _MoveToSelfTransport:
                 # the leased AET when the pool holds N > 1 identities.
                 ops = DicomOperations(calling_aet=aet, max_pdu=self._max_pdu)
                 result = ops.move_study(config, request, destination_aet=aet)
+                if result.num_failed:
+                    raise AssociationError(
+                        f"C-MOVE incomplete: {result.num_failed} sub-operation(s) failed "
+                        f"({result.num_completed} completed) — not caching a partial series."
+                    )
                 if result.num_completed:
                     self._scp.set_expected(scp_key, result.num_completed)
                     self._scp.wait_for_completion(scp_key, self._completion_grace)
