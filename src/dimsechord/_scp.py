@@ -126,16 +126,21 @@ class StorageSCP:
     def wait_for_completion(self, key: str, timeout: float) -> bool:
         """Wait until the session's ``done`` event fires; return whether it did.
 
-        ``True`` means the expected C-STOREs all arrived within ``timeout`` (or
-        the session was ended/stopped); ``False`` means the grace expired first —
-        a physical-arrival shortfall — or the session is unknown. The event is
-        thread-safe, so it is awaited outside ``_lock``.
+        ``True`` means the expected C-STOREs all physically arrived within
+        ``timeout``. ``False`` means the grace expired first — a physical-arrival
+        shortfall — the session is unknown, or the ``done`` event was fired by
+        shutdown/session-end (``stop``/``signal_end``) rather than by genuine
+        arrival: a completion satisfied by session-end must read as failure so a
+        truncated series is never certified complete. Normal completion sets
+        ``done`` via the C-STORE handler with ``ended`` still ``False`` (``signal_end``
+        runs only after this returns), so the guard leaves the happy path intact.
+        The event is thread-safe, so it is awaited outside ``_lock``.
         """
         with self._lock:
             session = self._sessions.get(key)
         if session is None:
             return False
-        return session.done.wait(timeout=timeout)
+        return session.done.wait(timeout=timeout) and not session.ended
 
     def signal_end(self, key: str) -> None:
         """Mark the session ended and push the end-of-stream sentinel."""
