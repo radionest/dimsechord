@@ -180,13 +180,17 @@ class StorageSCP:
                     return 0x0000
                 session.instances[sop_uid] = ds
                 session.received_count += 1
+                # Enqueue before signalling completion: ``done`` firing lets the driver's
+                # ``wait_for_completion`` return and run ``signal_end``, pushing the None
+                # sentinel — which must never overtake this item, or the consumer breaks
+                # having yielded N-1 of N and certifies a short series. The queue is
+                # thread-safe and unbounded (put never blocks), so it is safe under the lock.
+                session.queue.put((sop_uid, ds))
                 if (
                     session.expected_count is not None
                     and session.received_count >= session.expected_count
                 ):
                     session.done.set()
-
-            session.queue.put((sop_uid, ds))
             return 0x0000
         except Exception as e:
             logger.error(f"SCP C-STORE handler error: {e}")
