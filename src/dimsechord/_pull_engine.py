@@ -16,6 +16,7 @@ import logging
 import queue
 import threading
 import time
+from contextlib import aclosing
 from typing import TYPE_CHECKING
 from weakref import WeakValueDictionary
 
@@ -335,14 +336,20 @@ class PullEngine:
     async def stream_series(
         self, study_uid: str, series_uid: str
     ) -> AsyncIterator[Dataset]:
-        async for ds in iter_to_aiter(lambda: self.iter_series(study_uid, series_uid)):
-            yield ds
+        async with aclosing(
+            iter_to_aiter(lambda: self.iter_series(study_uid, series_uid))
+        ) as agen:
+            async for ds in agen:
+                yield ds
 
     async def stream_study(
         self, study_uid: str, series_uids: list[str]
     ) -> AsyncIterator[Dataset]:
-        async for ds in iter_to_aiter(lambda: self.iter_study(study_uid, series_uids)):
-            yield ds
+        async with aclosing(
+            iter_to_aiter(lambda: self.iter_study(study_uid, series_uids))
+        ) as agen:
+            async for ds in agen:
+                yield ds
 
     async def ensure_series(self, study_uid: str, series_uid: str) -> MemoryCachedSeries:
         instances: dict[str, Dataset] = {}

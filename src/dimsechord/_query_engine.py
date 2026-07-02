@@ -11,6 +11,7 @@ come back as the peer sent them.
 
 from __future__ import annotations
 
+from contextlib import aclosing
 from typing import TYPE_CHECKING
 
 from dimsechord._bridge import iter_to_aiter
@@ -70,7 +71,8 @@ class QueryEngine:
     async def stream_find(
         self, identifier: Dataset, *, model: str, timeout: float | None = None
     ) -> AsyncIterator[Dataset]:
-        async for ds in iter_to_aiter(
-            lambda: self.iter_find(identifier, model=model, timeout=timeout)
-        ):
-            yield ds
+        async with aclosing(
+            iter_to_aiter(lambda: self.iter_find(identifier, model=model, timeout=timeout))
+        ) as agen:
+            async for ds in agen:
+                yield ds

@@ -100,6 +100,8 @@ def test_find_iter_close_aborts_association(free_port) -> None:
         gen = ops.find_iter(_config(pacs), _identifier(), FIND)
         next(gen)
         gen.close()  # abort, not drain
-        assert _wait_zero_associations(pacs)
+        # 4 remaining responses x 0.3s delay: a graceful drain needs >=1.2s, so a
+        # 1.0s bound discriminates abort (~50ms) from drain with ~20x margin.
+        assert _wait_zero_associations(pacs, timeout=1.0)
     finally:
         pacs.stop()

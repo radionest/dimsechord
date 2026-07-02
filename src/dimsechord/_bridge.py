@@ -8,14 +8,14 @@ import threading
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
-    from collections.abc import AsyncIterator, Callable, Iterator
+    from collections.abc import AsyncGenerator, Callable, Iterator
 
 _SENTINEL: Any = object()
 
 
 async def iter_to_aiter[T](
     make_iter: Callable[[], Iterator[T]], *, maxsize: int = 256
-) -> AsyncIterator[T]:
+) -> AsyncGenerator[T, None]:
     """Run a sync iterator in a worker thread and stream its items to the loop.
 
     The queue is bounded: a slow async consumer parks the producer thread,
