@@ -504,9 +504,12 @@ class DicomOperations:
         ae = AE(ae_title=self.calling_aet)
         ae.maximum_pdu_size = self.max_pdu
         # _association ignores config.timeout for the typed finds; the raw
-        # streaming path applies it as the ACSE/DIMSE socket timeout.
+        # streaming path applies it to the ACSE/DIMSE/network timeouts —
+        # network_timeout otherwise stays at pynetdicom's 60 s default and
+        # would abort a stream idle longer than that.
         ae.acse_timeout = config.timeout
         ae.dimse_timeout = config.timeout
+        ae.network_timeout = config.timeout
         ae.add_requested_context(model)
         with self._association(ae, config) as assoc:
             try:
