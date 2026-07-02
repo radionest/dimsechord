@@ -4,6 +4,7 @@ from dimsechord._exceptions import (
     ArrivalTimeoutError,
     AssociationError,
     DimsechordError,
+    FindFailedError,
     MoveToSelfError,
     PoolExhaustedError,
 )
@@ -11,7 +12,13 @@ from dimsechord._exceptions import (
 
 @pytest.mark.parametrize(
     "exc",
-    [AssociationError, PoolExhaustedError, MoveToSelfError, ArrivalTimeoutError],
+    [
+        AssociationError,
+        PoolExhaustedError,
+        MoveToSelfError,
+        ArrivalTimeoutError,
+        FindFailedError,
+    ],
 )
 def test_all_errors_subclass_base(exc: type[Exception]) -> None:
     assert issubclass(exc, DimsechordError)

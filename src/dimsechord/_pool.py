@@ -10,6 +10,7 @@ from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
+    from typing import Literal
 
 from dimsechord._exceptions import PoolExhaustedError
 
@@ -64,7 +65,7 @@ class AssociationPool:
     def total_capacity(self) -> int:
         return len(self._pooled) * self._per_aet_cap
 
-    def _acquire(self, timeout: float | None, kind: str) -> _PooledAet:
+    def _acquire(self, timeout: float | None, kind: Literal["move", "find"]) -> _PooledAet:
         n = len(self._pooled)
         with self._rr_lock:
             start = self._next
