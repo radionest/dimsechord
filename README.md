@@ -76,6 +76,10 @@ async def main() -> None:
 asyncio.run(main())
 ```
 
+> **0.5.0:** the disk cache now records per-series completeness; series cached
+> by earlier versions re-pull once on first read after upgrade (the SQLite
+> schema migrates automatically).
+
 > **0.4.0 (breaking):** `StorageSCP.start` now takes an `{AET: port}` mapping
 > (was `start(aets, port)`), binding one listener per port.
 
