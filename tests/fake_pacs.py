@@ -7,6 +7,9 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from collections.abc import Iterator
 
+import threading
+import time
+
 from pydicom import Dataset
 from pynetdicom import AE, StoragePresentationContexts, evt
 from pynetdicom.sop_class import (  # type: ignore[attr-defined]
@@ -29,6 +32,12 @@ class FakePacs:
         self._destinations: dict[str, tuple[str, int]] = {}
         self._server: object | None = None
         self.moves: list[tuple[str, int]] = []
+        self.find_identifiers: list[Dataset] = []
+        self.find_calling_aets: list[str] = []
+        self.find_response_delay: float = 0.0
+        self.fail_find_with: int | None = None
+        self.active_associations = 0
+        self._assoc_lock = threading.Lock()
 
     # ── seeding ──────────────────────────────────────────────────
     def add_instance(self, ds: Dataset) -> None:
@@ -62,6 +71,9 @@ class FakePacs:
             (evt.EVT_C_MOVE, self._on_move),
             (evt.EVT_C_GET, self._on_get),
             (evt.EVT_C_ECHO, self._on_echo),
+            (evt.EVT_ESTABLISHED, self._on_established),
+            (evt.EVT_RELEASED, self._on_closed),
+            (evt.EVT_ABORTED, self._on_closed),
         ]
         self._server = ae.start_server(
             ("127.0.0.1", port), block=False, evt_handlers=handlers
@@ -76,6 +88,14 @@ class FakePacs:
     @staticmethod
     def _on_echo(event: evt.Event) -> int:  # noqa: ARG004
         return 0x0000
+
+    def _on_established(self, event: evt.Event) -> None:  # noqa: ARG002
+        with self._assoc_lock:
+            self.active_associations += 1
+
+    def _on_closed(self, event: evt.Event) -> None:  # noqa: ARG002
+        with self._assoc_lock:
+            self.active_associations -= 1
 
     def _match(self, identifier: Dataset) -> list[Dataset]:
         study = str(getattr(identifier, "StudyInstanceUID", "") or "")
@@ -92,6 +112,14 @@ class FakePacs:
     def _on_find(self, event: evt.Event) -> Iterator[tuple[int, Dataset | None]]:
         identifier = event.identifier
         level = str(getattr(identifier, "QueryRetrieveLevel", "STUDY"))
+        calling = event.assoc.requestor.ae_title
+        if hasattr(calling, "decode"):
+            calling = calling.decode()
+        self.find_identifiers.append(identifier)
+        self.find_calling_aets.append(str(calling).strip())
+        if self.fail_find_with is not None:
+            yield (self.fail_find_with, None)
+            return
         matches = self._match(identifier)
 
         seen: set[str] = set()
@@ -164,6 +192,8 @@ class FakePacs:
                 for attr in ("ImageType", "ContentDate", "SliceThickness"):
                     if getattr(ds, attr, None) is not None:
                         setattr(resp, attr, getattr(ds, attr))
+            if self.find_response_delay:
+                time.sleep(self.find_response_delay)
             yield (0xFF00, resp)
         yield (0x0000, None)
 

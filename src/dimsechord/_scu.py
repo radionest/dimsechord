@@ -11,7 +11,7 @@
 import logging
 import threading
 import time
-from collections.abc import Callable, Generator
+from collections.abc import Callable, Generator, Iterator
 from contextlib import contextmanager
 from typing import TYPE_CHECKING, Any
 
@@ -31,7 +31,7 @@ from pynetdicom.sop_class import (  # type: ignore[attr-defined]
 if TYPE_CHECKING:
     from dimsechord._scp import StorageSCP
 
-from dimsechord._exceptions import AssociationError
+from dimsechord._exceptions import AssociationError, FindFailedError
 from dimsechord._handlers import create_store_handler
 from dimsechord._models import (
     MODALITIES_SEPARATOR,
@@ -488,6 +488,44 @@ class DicomOperations:
                         logger.info(f"C-FIND completed successfully, found {len(results)} images")
 
             return results
+
+    def find_iter(
+        self, config: AssociationConfig, identifier: Dataset, model: str
+    ) -> Iterator[Dataset]:
+        """Stream raw C-FIND responses for a pass-through identifier.
+
+        The identifier is forwarded to the peer unmodified and each pending
+        response's identifier is yielded as its PDU arrives — no typed
+        parsing, no buffering. A final status other than success raises
+        ``FindFailedError`` carrying the DIMSE status code. Closing the
+        generator early aborts the association so the slot frees immediately
+        instead of draining remaining responses.
+        """
+        ae = AE(ae_title=self.calling_aet)
+        ae.maximum_pdu_size = self.max_pdu
+        # _association ignores config.timeout for the typed finds; the raw
+        # streaming path applies it as the ACSE/DIMSE socket timeout.
+        ae.acse_timeout = config.timeout
+        ae.dimse_timeout = config.timeout
+        ae.add_requested_context(model)
+        with self._association(ae, config) as assoc:
+            try:
+                for status, ident in assoc.send_c_find(identifier, model):
+                    if not status:
+                        raise AssociationError(
+                            "C-FIND connection aborted or timed out mid-stream"
+                        )
+                    code = int(status.Status)
+                    if code in (0xFF00, 0xFF01):
+                        if ident is not None:
+                            yield ident
+                    elif code == 0x0000:
+                        return
+                    else:
+                        raise FindFailedError(code)
+            except GeneratorExit:
+                assoc.abort()  # _association's release() after abort is a no-op
+                raise
 
     def move_study(
         self, config: AssociationConfig, request: RetrieveRequest, destination_aet: str
