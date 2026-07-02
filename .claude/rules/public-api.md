@@ -12,15 +12,15 @@ Every other module is private:
   unsupported and may break without notice — several of these modules say
   so explicitly, as a top-of-file comment in `_scu.py`/`_handlers.py`, or
   in the module docstring in `_models.py`.
-- The public surface centers on two orchestration entry points —
-  `DicomClient` (async C-FIND / C-STORE / C-MOVE / C-GET) and
-  `PullEngine` (move-to-self / C-GET retrieval) — plus
-  directly-constructed building blocks (`StorageSCP`, `AssociationPool`,
-  `DicomCache`) and standalone converter/multipart utilities, all
-  re-exported from `__init__.py`. If a use case genuinely isn't covered
-  by any of them, **extend** `__init__.py`'s exports — add a
-  method/function to a private module and re-export it — rather than
-  importing the private module directly.
+- The public surface centers on three orchestration entry points —
+  `DicomClient` (async C-FIND / C-STORE / C-MOVE / C-GET), `PullEngine`
+  (move-to-self / C-GET retrieval), and `QueryEngine` (pool-gated raw
+  C-FIND streaming) — plus directly-constructed building blocks
+  (`StorageSCP`, `AssociationPool`, `DicomCache`) and standalone
+  converter/multipart utilities, all re-exported from `__init__.py`. If
+  a use case genuinely isn't covered by any of them, **extend**
+  `__init__.py`'s exports — add a method/function to a private module
+  and re-export it — rather than importing the private module directly.
 
 ## Do not import directly
 

@@ -15,6 +15,7 @@ client = DicomClient(calling_aet="MYSCU")
 - [Retrieve (C-MOVE vs C-GET)](#retrieve-c-move-vs-c-get)
 - [Receive instances (C-STORE SCP)](#receive-instances-c-store-scp)
 - [Streaming pull with cache](#streaming-pull-with-cache)
+- [Streaming find (raw C-FIND pass-through)](#streaming-find-raw-c-find-pass-through)
 - [DICOMweb JSON](#dicomweb-json)
 - [Multipart frames](#multipart-frames)
 - [Multiple AE identities](#multiple-ae-identities)
@@ -153,6 +154,74 @@ pool = AssociationPool(aets=["DEST_A", "DEST_B"])
 scp = StorageSCP()
 scp.start({"DEST_A": 11113, "DEST_B": 11114})  # one listener per AET
 ```
+
+## Streaming find (raw C-FIND pass-through)
+
+`QueryEngine` is symmetric to `PullEngine`, but for C-FIND instead of
+retrieval: it leases a find identity from an `AssociationPool` per query and
+streams *raw* response identifiers — no typed parsing, so the identifier you
+build goes out unmodified and each response comes back exactly as the peer
+sent it. `iter_find` is sync (for a DIMSE SCP thread); `stream_find` is its
+async counterpart:
+
+```python
+from pydicom import Dataset
+from pynetdicom.sop_class import StudyRootQueryRetrieveInformationModelFind as FIND
+
+from dimsechord import AssociationPool, QueryEngine
+
+pool = AssociationPool(aets=["MYFIND"], per_aet_find_cap=4)
+engine = QueryEngine(pool=pool, pacs=pacs)
+
+identifier = Dataset()
+identifier.QueryRetrieveLevel = "STUDY"
+identifier.PatientName = "DOE^JOHN"
+identifier.StudyInstanceUID = ""
+
+async for ds in engine.stream_find(identifier, model=FIND):
+    ...                                    # ds: raw pending-response Dataset
+```
+
+Find leases (`per_aet_find_cap`, default 4) are a cap independent of move
+leases (`per_aet_cap`) on the same pool — `lease_find` neither blocks nor is
+blocked by `lease`/C-MOVE-to-self traffic, matching a PACS's tolerance for
+several concurrent C-FIND associations per AET. A non-success final DIMSE
+status raises `FindFailedError`, carrying the status code as `.status`:
+
+```python
+from dimsechord import FindFailedError
+
+try:
+    async for ds in engine.stream_find(identifier, model=FIND):
+        ...
+except FindFailedError as e:
+    ...                                    # e.status, e.g. 0xA700
+```
+
+Convert each raw response to QIDO JSON with `dataset_to_qido_json` — unlike
+`dataset_to_dicom_json` it injects no `BulkDataURI` (C-FIND responses carry
+no pixel data):
+
+```python
+from dimsechord import dataset_to_qido_json
+
+qido = [dataset_to_qido_json(ds) async for ds in engine.stream_find(identifier, model=FIND)]
+```
+
+`stream_find` and `PullEngine`'s `stream_series`/`stream_study` all run on
+`iter_to_aiter`, the shared sync-iterator→async-iterator bridge: a worker
+thread drives the sync generator and feeds a bounded queue, so a slow async
+consumer parks the producer thread — and, through it, the underlying socket
+read — carrying backpressure to the peer. Closing the async generator early
+aborts the upstream association instead of draining the remaining responses:
+an explicit `aclose()` releases the pool lease before it returns, while a
+merely abandoned generator is finalized by the event loop shortly after.
+
+If the deployment opted into a global cap via
+`DicomClient.set_max_concurrent_associations`, that permit is held for the
+*entire* stream, not just while associating — a slow or long-lived
+`stream_find`/`stream_series`/`stream_study` consumer occupies one of those
+global slots for as long as it keeps iterating.
 
 ## DICOMweb JSON
 
