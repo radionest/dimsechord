@@ -10,6 +10,7 @@ If something you need is not exported here, extend this surface (add it to a
 private module and re-export it) rather than importing a private symbol.
 """
 
+from dimsechord._bridge import iter_to_aiter
 from dimsechord._cache import DicomCache, MemoryCachedSeries
 from dimsechord._client import DicomClient
 from dimsechord._converter import (
@@ -17,6 +18,7 @@ from dimsechord._converter import (
     TagValue,
     convert_datasets_to_dicom_json,
     dataset_to_dicom_json,
+    dataset_to_qido_json,
     image_result_to_dicom_json,
     series_result_to_dicom_json,
     study_result_to_dicom_json,
@@ -25,6 +27,7 @@ from dimsechord._exceptions import (
     ArrivalTimeoutError,
     AssociationError,
     DimsechordError,
+    FindFailedError,
     MoveToSelfError,
     PoolExhaustedError,
 )
@@ -43,9 +46,10 @@ from dimsechord._models import (
 from dimsechord._multipart import build_multipart_response, extract_frames_from_dataset
 from dimsechord._pool import AssociationPool
 from dimsechord._pull_engine import PullEngine
+from dimsechord._query_engine import QueryEngine
 from dimsechord._scp import StorageSCP
 
-__version__ = "0.4.0"
+__version__ = "0.5.0"
 
 __all__ = [
     "ArrivalTimeoutError",
@@ -57,12 +61,14 @@ __all__ = [
     "DicomJson",
     "DicomNode",
     "DimsechordError",
+    "FindFailedError",
     "ImageQuery",
     "ImageResult",
     "MemoryCachedSeries",
     "MoveToSelfError",
     "PoolExhaustedError",
     "PullEngine",
+    "QueryEngine",
     "QueryRetrieveLevel",
     "RetrieveResult",
     "SeriesQuery",
@@ -74,8 +80,10 @@ __all__ = [
     "build_multipart_response",
     "convert_datasets_to_dicom_json",
     "dataset_to_dicom_json",
+    "dataset_to_qido_json",
     "extract_frames_from_dataset",
     "image_result_to_dicom_json",
+    "iter_to_aiter",
     "series_result_to_dicom_json",
     "study_result_to_dicom_json",
 ]

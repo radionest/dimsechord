@@ -5,6 +5,7 @@ from pydicom import Dataset
 from dimsechord._converter import (
     convert_datasets_to_dicom_json,
     dataset_to_dicom_json,
+    dataset_to_qido_json,
     image_result_to_dicom_json,
     series_result_to_dicom_json,
     study_result_to_dicom_json,
@@ -157,3 +158,27 @@ def test_operator_name_empty_element_keeps_value_positionally_aligned() -> None:
     )
     js = series_result_to_dicom_json(result)
     assert js["00081070"] == {"vr": "PN", "Value": [{"Alphabetic": "OPER^X"}, {}]}
+
+
+def test_dataset_to_qido_json_plain_response() -> None:
+    ds = Dataset()
+    ds.QueryRetrieveLevel = "STUDY"
+    ds.StudyInstanceUID = "1.2.3"
+    ds.PatientName = "Иванов^Пётр"
+    ds.ModalitiesInStudy = ["CT", "SR"]
+    out = dataset_to_qido_json(ds)
+    assert out["0020000D"] == {"vr": "UI", "Value": ["1.2.3"]}
+    assert out["00100010"]["Value"] == [{"Alphabetic": "Иванов^Пётр"}]
+    assert out["00080061"]["Value"] == ["CT", "SR"]
+    assert "7FE00010" not in out  # no forced BulkDataURI in QIDO responses
+
+
+def test_dataset_to_dicom_json_still_injects_bulkdata_uri() -> None:
+    ds = Dataset()
+    ds.StudyInstanceUID = "1.2.3"
+    ds.SeriesInstanceUID = "1.2.3.4"
+    ds.SOPInstanceUID = "1.2.3.4.5"
+    out = dataset_to_dicom_json(ds, "http://x/dicom-web")
+    assert out["7FE00010"]["BulkDataURI"].endswith(
+        "/studies/1.2.3/series/1.2.3.4/instances/1.2.3.4.5/frames/1"
+    )
