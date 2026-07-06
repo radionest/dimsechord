@@ -1,11 +1,12 @@
 from types import SimpleNamespace
 
 import pytest
+from pydicom.uid import ExplicitVRLittleEndian, JPEGLSLossless
 from pynetdicom import AE
 from pynetdicom.sop_class import MRImageStorage  # type: ignore[attr-defined]
 
 from dimsechord._scp import StorageSCP
-from tests.factories import make_instance
+from tests.factories import make_compressed_instance, make_instance
 
 
 def test_scp_binds_distinct_port_per_aet(free_port, seeded_study) -> None:
@@ -230,5 +231,56 @@ def test_shared_port_two_aets_route_by_uid(free_port, seeded_study) -> None:
         sop_b, _ = session_b.queue.get(timeout=10)
         assert sop_b == seeded_study[series_b][0]
         assert session_b.received_count == 1
+    finally:
+        scp.stop()
+
+
+def test_scp_accepts_compressed_c_store_verbatim(free_port, seeded_study) -> None:
+    """A JPEG-LS C-STORE is accepted and streamed out with its original TS intact."""
+    scp = StorageSCP()
+    port = free_port()
+    scp.start({"DEST": port}, ip="127.0.0.1")
+    study, series = seeded_study["study"][0], seeded_study["series"][0]
+    session = scp.register_session(f"{study}/{series}")
+    inst = make_compressed_instance(study, series, seeded_study[series][0])
+    try:
+        ae = AE(ae_title="SENDER")
+        ae.add_requested_context(MRImageStorage, [JPEGLSLossless])
+        assoc = ae.associate("127.0.0.1", port, ae_title="DEST")
+        assert assoc.is_established
+        try:
+            assert assoc.accepted_contexts, "SCP rejected the JPEG-LS context"
+            assert assoc.send_c_store(inst).Status == 0x0000
+        finally:
+            assoc.release()
+        sop_uid, ds = session.queue.get(timeout=10)
+        assert sop_uid == seeded_study[series][0]
+        assert ds.file_meta.TransferSyntaxUID == JPEGLSLossless
+    finally:
+        scp.stop()
+
+
+def test_scp_custom_transfer_syntaxes_restrict_matching(free_port) -> None:
+    """A restricted TS list still works: JPEG-LS-only proposals get no accepted context.
+
+    pynetdicom aborts the whole association when zero presentation contexts
+    negotiate successfully (see ``acse.py``'s "No accepted presentation contexts"
+    branch), so ``is_established`` is False here rather than True. This differs
+    from the SDD task brief's literal test, which asserted an established
+    association with an empty ``accepted_contexts`` — verified against the
+    installed pynetdicom to not hold; ``release()`` is a safe no-op either way.
+    """
+    scp = StorageSCP(supported_transfer_syntaxes=[ExplicitVRLittleEndian])
+    port = free_port()
+    scp.start({"DEST": port}, ip="127.0.0.1")
+    try:
+        ae = AE(ae_title="SENDER")
+        ae.add_requested_context(MRImageStorage, [JPEGLSLossless])
+        assoc = ae.associate("127.0.0.1", port, ae_title="DEST")
+        try:
+            assert not assoc.is_established
+            assert not assoc.accepted_contexts
+        finally:
+            assoc.release()
     finally:
         scp.stop()

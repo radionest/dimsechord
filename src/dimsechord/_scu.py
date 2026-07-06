@@ -17,8 +17,10 @@ from typing import TYPE_CHECKING, Any
 
 from pydicom import Dataset
 from pydicom.multival import MultiValue
-from pynetdicom import AE, StoragePresentationContexts, build_role
+from pydicom.uid import UID
+from pynetdicom import AE, build_role
 from pynetdicom.pdu_primitives import SCP_SCU_RoleSelectionNegotiation
+from pynetdicom.presentation import DEFAULT_TRANSFER_SYNTAXES, build_context
 from pynetdicom.sop_class import (  # type: ignore[attr-defined]
     PatientRootQueryRetrieveInformationModelFind,
     PatientRootQueryRetrieveInformationModelGet,
@@ -29,6 +31,10 @@ from pynetdicom.sop_class import (  # type: ignore[attr-defined]
 )
 
 if TYPE_CHECKING:
+    from collections.abc import Sequence
+
+    from pynetdicom.presentation import PresentationContext
+
     from dimsechord._scp import StorageSCP
 
 from dimsechord._exceptions import AssociationError, FindFailedError
@@ -49,6 +55,7 @@ from dimsechord._models import (
     StudyQuery,
     StudyResult,
 )
+from dimsechord._presentation import build_storage_scu_contexts
 
 logger = logging.getLogger(__name__)
 
@@ -162,6 +169,39 @@ def _pin_charset(ds: Dataset) -> Dataset:
     return ds
 
 
+def _storage_contexts_for_datasets(
+    datasets: "Sequence[Dataset]",
+) -> "list[PresentationContext]":
+    """Requested contexts derived from the datasets being sent.
+
+    pynetdicom converts freely between uncompressed syntaxes but requires an
+    exactly matching context for a compressed dataset, so: one default-TS
+    context per SOP class seen uncompressed (or without file_meta), plus one
+    single-syntax context per unique (SOP class, compressed TS) pair.
+    """
+    uncompressed: set[str] = set()
+    compressed: set[tuple[str, str]] = set()
+    for ds in datasets:
+        sop_class = str(getattr(ds, "SOPClassUID", "") or "")
+        if not sop_class:
+            continue  # send_c_store will reject it; no context to build
+        ts = getattr(getattr(ds, "file_meta", None), "TransferSyntaxUID", None)
+        if ts is not None and UID(str(ts)).is_compressed:
+            compressed.add((sop_class, str(ts)))
+        else:
+            uncompressed.add(sop_class)
+    total = len(uncompressed) + len(compressed)
+    if total > 128:
+        raise ValueError(
+            f"{total} presentation contexts needed for this batch exceed the "
+            f"limit of 128 ({len(uncompressed)} uncompressed classes + "
+            f"{len(compressed)} compressed class/syntax pairs)"
+        )
+    contexts = [build_context(cls, DEFAULT_TRANSFER_SYNTAXES) for cls in sorted(uncompressed)]
+    contexts += [build_context(cls, [ts]) for cls, ts in sorted(compressed)]
+    return contexts
+
+
 class DicomOperations:
     """Synchronous DICOM operations wrapper for pynetdicom."""
 
@@ -201,25 +241,25 @@ class DicomOperations:
         """Create an AE for C-GET with SCP/SCU role negotiation.
 
         C-GET delivers instances as C-STORE sub-operations over the SAME
-        association, so we request SCP role for each storage presentation context.
-        Capped at 126 to leave room for the two GET contexts within the DICOM
-        128-context limit.
+        association, so we request SCP role for each storage SOP class. The
+        storage contexts come from ``build_storage_scu_contexts`` with a
+        budget of 126 (two slots go to the GET information models): the
+        curated image classes negotiate compressed transfer syntaxes so
+        compressed instances arrive verbatim instead of failing.
         """
         ae = AE(ae_title=self.calling_aet)
         ae.maximum_pdu_size = self.max_pdu
         ae.add_requested_context(PatientRootQueryRetrieveInformationModelGet)
         ae.add_requested_context(StudyRootQueryRetrieveInformationModelGet)
         roles: list[SCP_SCU_RoleSelectionNegotiation] = []
-        for cx in StoragePresentationContexts[:126]:
-            if cx.abstract_syntax is not None:
-                ae.add_requested_context(cx.abstract_syntax)
+        negotiated: set[str] = set()
+        for cx in build_storage_scu_contexts(max_contexts=126):
+            if cx.abstract_syntax is None:
+                continue
+            ae.add_requested_context(cx.abstract_syntax, cx.transfer_syntax)
+            if cx.abstract_syntax not in negotiated:
+                negotiated.add(cx.abstract_syntax)
                 roles.append(build_role(cx.abstract_syntax, scp_role=True))
-        dropped = len(StoragePresentationContexts) - 126
-        if dropped > 0:
-            logger.warning(
-                f"C-GET: {dropped} storage presentation context(s) dropped to fit the "
-                f"DICOM 128-context limit; those SOP classes cannot be retrieved via C-GET."
-            )
         return ae, roles
 
     @contextmanager
@@ -821,11 +861,7 @@ class DicomOperations:
         """
         ae = AE(ae_title=self.calling_aet)
         ae.maximum_pdu_size = self.max_pdu
-
-        # Add storage contexts for the dataset's SOP class
-        for cx in StoragePresentationContexts:
-            if cx.abstract_syntax is not None:
-                ae.add_requested_context(cx.abstract_syntax)
+        ae.requested_contexts = _storage_contexts_for_datasets([dataset])
 
         with self._association(ae, config) as assoc:
             status = assoc.send_c_store(dataset)
@@ -856,10 +892,7 @@ class DicomOperations:
 
         ae = AE(ae_title=self.calling_aet)
         ae.maximum_pdu_size = self.max_pdu
-
-        for cx in StoragePresentationContexts:
-            if cx.abstract_syntax is not None:
-                ae.add_requested_context(cx.abstract_syntax)
+        ae.requested_contexts = _storage_contexts_for_datasets(datasets)
 
         result = BatchStoreResult()
         with self._association(ae, config) as assoc:

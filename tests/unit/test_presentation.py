@@ -1,0 +1,83 @@
+"""Unit tests for the storage SCU presentation-context builder."""
+
+import pytest
+from pynetdicom.presentation import DEFAULT_TRANSFER_SYNTAXES
+from pynetdicom.sop_class import (  # type: ignore[attr-defined]
+    CTImageStorage,
+    MRImageStorage,
+)
+
+from dimsechord._presentation import (
+    DEFAULT_COMPRESSED_TRANSFER_SYNTAXES,
+    DEFAULT_IMAGE_STORAGE_CLASSES,
+    DEFAULT_OTHER_STORAGE_CLASSES,
+    build_storage_scu_contexts,
+)
+
+JPEG_LS_LOSSLESS = "1.2.840.10008.1.2.4.80"
+
+
+def test_default_tuple_sizes() -> None:
+    assert len(DEFAULT_COMPRESSED_TRANSFER_SYNTAXES) == 8
+    assert len(DEFAULT_IMAGE_STORAGE_CLASSES) == 10
+    assert len(DEFAULT_OTHER_STORAGE_CLASSES) == 16
+
+
+def test_default_context_count_is_106_and_fits_the_limit() -> None:
+    contexts = build_storage_scu_contexts()
+    assert len(contexts) == 106
+    assert len(contexts) <= 128
+
+
+def test_image_class_gets_uncompressed_plus_one_context_per_compressed_ts() -> None:
+    contexts = build_storage_scu_contexts()
+    ct = [c for c in contexts if c.abstract_syntax == str(CTImageStorage)]
+    assert len(ct) == 1 + len(DEFAULT_COMPRESSED_TRANSFER_SYNTAXES)
+    # First CT context carries the uncompressed defaults…
+    assert ct[0].transfer_syntax == list(DEFAULT_TRANSFER_SYNTAXES)
+    # …and every remaining CT context carries exactly one compressed TS.
+    single = [c.transfer_syntax for c in ct[1:]]
+    assert all(len(ts) == 1 for ts in single)
+    assert {ts[0] for ts in single} == set(DEFAULT_COMPRESSED_TRANSFER_SYNTAXES)
+
+
+def test_every_compressed_context_has_exactly_one_transfer_syntax() -> None:
+    for ctx in build_storage_scu_contexts():
+        if ctx.transfer_syntax != list(DEFAULT_TRANSFER_SYNTAXES):
+            assert len(ctx.transfer_syntax) == 1
+            assert ctx.transfer_syntax[0] in DEFAULT_COMPRESSED_TRANSFER_SYNTAXES
+
+
+def test_other_classes_are_uncompressed_only() -> None:
+    contexts = build_storage_scu_contexts()
+    for cls in DEFAULT_OTHER_STORAGE_CLASSES:
+        matching = [c for c in contexts if c.abstract_syntax == str(cls)]
+        assert len(matching) == 1
+        assert matching[0].transfer_syntax == list(DEFAULT_TRANSFER_SYNTAXES)
+
+
+def test_custom_lists_are_respected() -> None:
+    contexts = build_storage_scu_contexts(
+        image_classes=[MRImageStorage],
+        compressed_syntaxes=[JPEG_LS_LOSSLESS],
+        other_classes=[],
+    )
+    assert len(contexts) == 2
+    assert contexts[0].abstract_syntax == str(MRImageStorage)
+    assert contexts[0].transfer_syntax == list(DEFAULT_TRANSFER_SYNTAXES)
+    assert contexts[1].transfer_syntax == [JPEG_LS_LOSSLESS]
+
+
+def test_overflow_raises_value_error() -> None:
+    # 15 image classes x (1 + 8) = 135 > 128
+    classes = [f"1.2.3.{i}" for i in range(15)]
+    with pytest.raises(ValueError, match="128"):
+        build_storage_scu_contexts(image_classes=classes, other_classes=[])
+
+
+def test_max_contexts_reserve_for_cget() -> None:
+    # Defaults fit a 126 budget (2 slots reserved for the GET models)…
+    assert len(build_storage_scu_contexts(max_contexts=126)) == 106
+    # …and a tighter budget rejects them.
+    with pytest.raises(ValueError, match="105"):
+        build_storage_scu_contexts(max_contexts=105)

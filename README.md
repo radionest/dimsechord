@@ -14,7 +14,8 @@ handlers, so you bring your own web layer.
 - **DIMSE SCU** — C-FIND, C-STORE, C-MOVE and C-GET, exposed through an async
   `DicomClient`.
 - **C-STORE SCP** — receive incoming instances with `StorageSCP`, one listener
-  per distinct port; multiple AETs may share a port.
+  per distinct port; multiple AETs may share a port. All transfer syntaxes
+  are accepted by default, so compressed objects arrive verbatim.
 - **AssociationPool** — manage multiple AE-Title identities with per-AET
   concurrency limits.
 - **Two-tier cache** — in-memory + disk, backed by a SQLite instance index.
@@ -75,6 +76,11 @@ async def main() -> None:
 
 asyncio.run(main())
 ```
+
+> **0.5.1:** `StorageSCP` accepts all transfer syntaxes by default and the new
+> `build_storage_scu_contexts()` builds forwarding-SCU contexts, so compressed
+> objects pass through verbatim. C-GET now negotiates a curated storage-class
+> set (see CHANGELOG).
 
 > **0.5.0:** the disk cache now records per-series completeness; series cached
 > by earlier versions re-pull once on first read after upgrade (the SQLite

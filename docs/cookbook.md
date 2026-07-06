@@ -12,6 +12,7 @@ client = DicomClient(calling_aet="MYSCU")
 
 - [Query (C-FIND)](#query-c-find)
 - [Store to a peer (C-STORE)](#store-to-a-peer-c-store)
+- [Forward compressed instances (presentation contexts for a proxy SCU)](#forward-compressed-instances-presentation-contexts-for-a-proxy-scu)
 - [Retrieve (C-MOVE vs C-GET)](#retrieve-c-move-vs-c-get)
 - [Receive instances (C-STORE SCP)](#receive-instances-c-store-scp)
 - [Streaming pull with cache](#streaming-pull-with-cache)
@@ -64,6 +65,44 @@ print(result.total_sent, result.total_failed, result.failed_sop_uids)
 
 `store_instance` returns a `bool`; `store_instances_batch` returns a
 `BatchStoreResult` summarizing the batch.
+
+## Forward compressed instances (presentation contexts for a proxy SCU)
+
+A proxy must forward objects verbatim. pynetdicom converts freely between
+uncompressed transfer syntaxes, but a compressed dataset needs an exactly
+matching accepted context — one context per (SOP class, syntax) pair, within
+the DICOM limit of 128 per association. `build_storage_scu_contexts()` builds
+a curated set that fits:
+
+```python
+from pynetdicom import AE
+
+from dimsechord import build_storage_scu_contexts
+
+ae = AE(ae_title="PROXY")
+ae.requested_contexts = build_storage_scu_contexts()
+assoc = ae.associate("pacs.example.org", 104, ae_title="ARCHIVE")
+# assoc.send_c_store(ds) now finds an exact context for compressed datasets.
+```
+
+Tune the defaults to your traffic — every parameter is optional:
+
+```python
+from dimsechord import (
+    DEFAULT_COMPRESSED_TRANSFER_SYNTAXES,
+    DEFAULT_IMAGE_STORAGE_CLASSES,
+    build_storage_scu_contexts,
+)
+
+contexts = build_storage_scu_contexts(
+    image_classes=[*DEFAULT_IMAGE_STORAGE_CLASSES, "1.2.840.10008.5.1.4.1.1.2.2"],
+    compressed_syntaxes=[*DEFAULT_COMPRESSED_TRANSFER_SYNTAXES, "1.2.840.10008.1.2.4.201"],
+)
+```
+
+The defaults produce 106 contexts, leaving headroom under the 128 limit;
+`ValueError` is raised if a customization overflows it. On the receive side no
+tuning is needed: `StorageSCP` accepts every transfer syntax by default.
 
 ## Retrieve (C-MOVE vs C-GET)
 

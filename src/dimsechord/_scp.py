@@ -8,11 +8,11 @@ import threading
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
-from pynetdicom import AE, StoragePresentationContexts, evt
+from pynetdicom import AE, ALL_TRANSFER_SYNTAXES, StoragePresentationContexts, evt
 from pynetdicom.sop_class import Verification  # type: ignore[attr-defined]
 
 if TYPE_CHECKING:
-    from collections.abc import Mapping
+    from collections.abc import Mapping, Sequence
 
     from pydicom import Dataset
 
@@ -39,7 +39,16 @@ class MoveSession:
 class StorageSCP:
     """Persistent pynetdicom Storage SCP that feeds per-session streaming queues."""
 
-    def __init__(self) -> None:
+    def __init__(self, supported_transfer_syntaxes: Sequence[str] = ALL_TRANSFER_SYNTAXES) -> None:
+        """Args:
+        supported_transfer_syntaxes: Transfer syntaxes every storage context
+            accepts (default: all pynetdicom knows). Supported contexts are
+            matched against the requester's proposals — never proposed — so
+            there is no 128-context limit on the accept side. Accepting all
+            syntaxes lets the upstream PACS send compressed objects verbatim
+            instead of failing sub-operations or transcoding.
+        """
+        self._supported_transfer_syntaxes = list(supported_transfer_syntaxes)
         self._servers: list[Any] = []
         self._aes: list[Any] = []
         self._sessions: dict[str, MoveSession] = {}
@@ -78,7 +87,9 @@ class StorageSCP:
                 ae.require_called_aet = False
                 for ctx in StoragePresentationContexts:
                     if ctx.abstract_syntax is not None:
-                        ae.add_supported_context(ctx.abstract_syntax)
+                        ae.add_supported_context(
+                            ctx.abstract_syntax, self._supported_transfer_syntaxes
+                        )
                 ae.add_supported_context(Verification)
                 server = ae.start_server((ip, port), evt_handlers=handlers, block=False)  # type: ignore[arg-type]
                 self._servers.append(server)

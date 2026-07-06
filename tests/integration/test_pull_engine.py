@@ -2,6 +2,7 @@ import threading
 import time
 
 import pytest
+from pydicom.uid import JPEGLSLossless, generate_uid
 
 from dimsechord._cache import DicomCache
 from dimsechord._exceptions import AssociationError, MoveToSelfError
@@ -10,7 +11,7 @@ from dimsechord._pool import AssociationPool
 from dimsechord._pull_engine import PullEngine
 from dimsechord._scp import MoveSession, StorageSCP
 from dimsechord._scu import DicomOperations
-from tests.factories import make_instance
+from tests.factories import make_compressed_instance, make_instance
 
 
 @pytest.fixture
@@ -334,3 +335,19 @@ def test_orphaned_move_driver_not_certified_complete(monkeypatch, free_port, tmp
         release.set()  # let the orphaned driver thread finish and die
         scp.stop()
         cache.shutdown()
+
+
+@pytest.mark.timeout(90)
+def test_move_to_self_compressed_series_verbatim(engine, fake_pacs, seeded_study) -> None:
+    """A compressed series survives C-MOVE-to-self byte-identical (no transcoding)."""
+    eng, _ = engine
+    study = seeded_study["study"][0]
+    series = generate_uid()
+    sops = [generate_uid(), generate_uid()]
+    for sop in sops:
+        fake_pacs.add_instance(make_compressed_instance(study, series, sop))
+
+    received = list(eng.iter_series(study, series))
+
+    assert {str(ds.SOPInstanceUID) for ds in received} == set(sops)
+    assert all(ds.file_meta.TransferSyntaxUID == JPEGLSLossless for ds in received)
