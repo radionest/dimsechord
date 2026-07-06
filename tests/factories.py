@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 from pydicom import Dataset
-from pydicom.uid import ExplicitVRLittleEndian, MRImageStorage, generate_uid
+from pydicom.encaps import encapsulate
+from pydicom.uid import ExplicitVRLittleEndian, JPEGLSLossless, MRImageStorage, generate_uid
 
 
 def make_instance(
@@ -46,4 +47,25 @@ def make_instance(
     ds.file_meta.MediaStorageSOPInstanceUID = sop_uid
     ds.file_meta.TransferSyntaxUID = ExplicitVRLittleEndian
     ds.file_meta.ImplementationClassUID = generate_uid()
+    return ds
+
+
+def make_compressed_instance(
+    study_uid: str,
+    series_uid: str,
+    sop_uid: str,
+    *,
+    transfer_syntax: str = JPEGLSLossless,
+) -> Dataset:
+    """MR instance whose PixelData is encapsulated as compressed frames.
+
+    The frame bytes are not a decodable JPEG-LS stream — nothing in DIMSE
+    transport decodes pixels — but the encapsulation, VR, and file_meta make
+    it a faithful compressed C-STORE payload.
+    """
+    ds = make_instance(study_uid, series_uid, sop_uid)
+    ds.PixelData = encapsulate([b"\x00" * 16])
+    ds["PixelData"].VR = "OB"
+    ds["PixelData"].is_undefined_length = True
+    ds.file_meta.TransferSyntaxUID = transfer_syntax
     return ds
