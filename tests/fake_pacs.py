@@ -11,7 +11,7 @@ import threading
 import time
 
 from pydicom import Dataset
-from pynetdicom import AE, StoragePresentationContexts, evt
+from pynetdicom import AE, ALL_TRANSFER_SYNTAXES, StoragePresentationContexts, evt
 from pynetdicom.sop_class import (  # type: ignore[attr-defined]
     PatientRootQueryRetrieveInformationModelFind,
     PatientRootQueryRetrieveInformationModelGet,
@@ -64,7 +64,9 @@ class FakePacs:
         # accept the requestor's SCP role (scu_role=True lets us act as Storage SCU).
         for cx in StoragePresentationContexts:
             if cx.abstract_syntax is not None:
-                ae.add_supported_context(cx.abstract_syntax, scu_role=True, scp_role=True)
+                ae.add_supported_context(
+                    cx.abstract_syntax, ALL_TRANSFER_SYNTAXES, scu_role=True, scp_role=True
+                )
                 ae.add_requested_context(cx.abstract_syntax)
         handlers = [
             (evt.EVT_C_FIND, self._on_find),

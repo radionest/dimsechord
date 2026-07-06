@@ -18,7 +18,7 @@ from typing import TYPE_CHECKING, Any
 from pydicom import Dataset
 from pydicom.multival import MultiValue
 from pydicom.uid import UID
-from pynetdicom import AE, StoragePresentationContexts, build_role
+from pynetdicom import AE, build_role
 from pynetdicom.pdu_primitives import SCP_SCU_RoleSelectionNegotiation
 from pynetdicom.presentation import DEFAULT_TRANSFER_SYNTAXES, build_context
 from pynetdicom.sop_class import (  # type: ignore[attr-defined]
@@ -55,6 +55,7 @@ from dimsechord._models import (
     StudyQuery,
     StudyResult,
 )
+from dimsechord._presentation import build_storage_scu_contexts
 
 logger = logging.getLogger(__name__)
 
@@ -240,25 +241,25 @@ class DicomOperations:
         """Create an AE for C-GET with SCP/SCU role negotiation.
 
         C-GET delivers instances as C-STORE sub-operations over the SAME
-        association, so we request SCP role for each storage presentation context.
-        Capped at 126 to leave room for the two GET contexts within the DICOM
-        128-context limit.
+        association, so we request SCP role for each storage SOP class. The
+        storage contexts come from ``build_storage_scu_contexts`` with a
+        budget of 126 (two slots go to the GET information models): the
+        curated image classes negotiate compressed transfer syntaxes so
+        compressed instances arrive verbatim instead of failing.
         """
         ae = AE(ae_title=self.calling_aet)
         ae.maximum_pdu_size = self.max_pdu
         ae.add_requested_context(PatientRootQueryRetrieveInformationModelGet)
         ae.add_requested_context(StudyRootQueryRetrieveInformationModelGet)
         roles: list[SCP_SCU_RoleSelectionNegotiation] = []
-        for cx in StoragePresentationContexts[:126]:
-            if cx.abstract_syntax is not None:
-                ae.add_requested_context(cx.abstract_syntax)
+        negotiated: set[str] = set()
+        for cx in build_storage_scu_contexts(max_contexts=126):
+            if cx.abstract_syntax is None:
+                continue
+            ae.add_requested_context(cx.abstract_syntax, cx.transfer_syntax)
+            if cx.abstract_syntax not in negotiated:
+                negotiated.add(cx.abstract_syntax)
                 roles.append(build_role(cx.abstract_syntax, scp_role=True))
-        dropped = len(StoragePresentationContexts) - 126
-        if dropped > 0:
-            logger.warning(
-                f"C-GET: {dropped} storage presentation context(s) dropped to fit the "
-                f"DICOM 128-context limit; those SOP classes cannot be retrieved via C-GET."
-            )
         return ae, roles
 
     @contextmanager
