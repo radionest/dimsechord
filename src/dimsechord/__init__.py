@@ -55,7 +55,7 @@ from dimsechord._pull_engine import PullEngine
 from dimsechord._query_engine import QueryEngine
 from dimsechord._scp import StorageSCP
 
-__version__ = "0.5.0"
+__version__ = "0.5.1"
 
 # RUF022 wants ALL_CAPS constants grouped before CapWords classes (isort-style
 # categorization); this project instead keeps __all__ in plain codepoint
