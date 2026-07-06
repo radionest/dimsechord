@@ -17,8 +17,10 @@ from typing import TYPE_CHECKING, Any
 
 from pydicom import Dataset
 from pydicom.multival import MultiValue
+from pydicom.uid import UID
 from pynetdicom import AE, StoragePresentationContexts, build_role
 from pynetdicom.pdu_primitives import SCP_SCU_RoleSelectionNegotiation
+from pynetdicom.presentation import DEFAULT_TRANSFER_SYNTAXES, build_context
 from pynetdicom.sop_class import (  # type: ignore[attr-defined]
     PatientRootQueryRetrieveInformationModelFind,
     PatientRootQueryRetrieveInformationModelGet,
@@ -29,6 +31,10 @@ from pynetdicom.sop_class import (  # type: ignore[attr-defined]
 )
 
 if TYPE_CHECKING:
+    from collections.abc import Sequence
+
+    from pynetdicom.presentation import PresentationContext
+
     from dimsechord._scp import StorageSCP
 
 from dimsechord._exceptions import AssociationError, FindFailedError
@@ -160,6 +166,39 @@ def _pin_charset(ds: Dataset) -> Dataset:
     """Pin UTF-8 (ISO_IR 192) on an answer dataset before value extraction (D9)."""
     ds.SpecificCharacterSet = _UTF8_CHARSET
     return ds
+
+
+def _storage_contexts_for_datasets(
+    datasets: "Sequence[Dataset]",
+) -> "list[PresentationContext]":
+    """Requested contexts derived from the datasets being sent.
+
+    pynetdicom converts freely between uncompressed syntaxes but requires an
+    exactly matching context for a compressed dataset, so: one default-TS
+    context per SOP class seen uncompressed (or without file_meta), plus one
+    single-syntax context per unique (SOP class, compressed TS) pair.
+    """
+    uncompressed: set[str] = set()
+    compressed: set[tuple[str, str]] = set()
+    for ds in datasets:
+        sop_class = str(getattr(ds, "SOPClassUID", "") or "")
+        if not sop_class:
+            continue  # send_c_store will reject it; no context to build
+        ts = getattr(getattr(ds, "file_meta", None), "TransferSyntaxUID", None)
+        if ts is not None and UID(str(ts)).is_compressed:
+            compressed.add((sop_class, str(ts)))
+        else:
+            uncompressed.add(sop_class)
+    total = len(uncompressed) + len(compressed)
+    if total > 128:
+        raise ValueError(
+            f"{total} presentation contexts needed for this batch exceed the "
+            f"limit of 128 ({len(uncompressed)} uncompressed classes + "
+            f"{len(compressed)} compressed class/syntax pairs)"
+        )
+    contexts = [build_context(cls, DEFAULT_TRANSFER_SYNTAXES) for cls in sorted(uncompressed)]
+    contexts += [build_context(cls, [ts]) for cls, ts in sorted(compressed)]
+    return contexts
 
 
 class DicomOperations:
@@ -821,11 +860,7 @@ class DicomOperations:
         """
         ae = AE(ae_title=self.calling_aet)
         ae.maximum_pdu_size = self.max_pdu
-
-        # Add storage contexts for the dataset's SOP class
-        for cx in StoragePresentationContexts:
-            if cx.abstract_syntax is not None:
-                ae.add_requested_context(cx.abstract_syntax)
+        ae.requested_contexts = _storage_contexts_for_datasets([dataset])
 
         with self._association(ae, config) as assoc:
             status = assoc.send_c_store(dataset)
@@ -856,10 +891,7 @@ class DicomOperations:
 
         ae = AE(ae_title=self.calling_aet)
         ae.maximum_pdu_size = self.max_pdu
-
-        for cx in StoragePresentationContexts:
-            if cx.abstract_syntax is not None:
-                ae.add_requested_context(cx.abstract_syntax)
+        ae.requested_contexts = _storage_contexts_for_datasets(datasets)
 
         result = BatchStoreResult()
         with self._association(ae, config) as assoc:
