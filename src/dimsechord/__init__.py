@@ -45,17 +45,30 @@ from dimsechord._models import (
 )
 from dimsechord._multipart import build_multipart_response, extract_frames_from_dataset
 from dimsechord._pool import AssociationPool
+from dimsechord._presentation import (
+    DEFAULT_COMPRESSED_TRANSFER_SYNTAXES,
+    DEFAULT_IMAGE_STORAGE_CLASSES,
+    DEFAULT_OTHER_STORAGE_CLASSES,
+    build_storage_scu_contexts,
+)
 from dimsechord._pull_engine import PullEngine
 from dimsechord._query_engine import QueryEngine
 from dimsechord._scp import StorageSCP
 
 __version__ = "0.5.0"
 
-__all__ = [
+# RUF022 wants ALL_CAPS constants grouped before CapWords classes (isort-style
+# categorization); this project instead keeps __all__ in plain codepoint
+# order (see test_all_is_sorted_and_unique), so the DEFAULT_* constants sit
+# alphabetically among the classes rather than at the top.
+__all__ = [  # noqa: RUF022
     "ArrivalTimeoutError",
     "AssociationError",
     "AssociationPool",
     "BatchStoreResult",
+    "DEFAULT_COMPRESSED_TRANSFER_SYNTAXES",
+    "DEFAULT_IMAGE_STORAGE_CLASSES",
+    "DEFAULT_OTHER_STORAGE_CLASSES",
     "DicomCache",
     "DicomClient",
     "DicomJson",
@@ -78,6 +91,7 @@ __all__ = [
     "StudyResult",
     "TagValue",
     "build_multipart_response",
+    "build_storage_scu_contexts",
     "convert_datasets_to_dicom_json",
     "dataset_to_dicom_json",
     "dataset_to_qido_json",
