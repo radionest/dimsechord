@@ -57,7 +57,7 @@ def _series_size_bytes(entry: MemoryCachedSeries) -> int:
 
 
 class DicomCache:
-    """Two-tier cache: in-memory TTLCache + disk, with a SQLite index for disk."""
+    """Two-tier cache: byte-bounded in-memory TTLCache + disk, with a SQLite index for disk."""
 
     def __init__(
         self,
@@ -67,7 +67,7 @@ class DicomCache:
         ttl_hours: int = 24,
         max_size_gb: float = 10.0,
         memory_ttl_minutes: int = 30,
-        memory_max_entries: int = 50,
+        memory_max_size_gb: float = 1.0,
         disk_write_concurrency: int = 4,
     ) -> None:
         self._base_dir = Path(base_dir)
@@ -76,9 +76,13 @@ class DicomCache:
         self._index = CacheIndex(db_path)
         self._ttl_seconds = ttl_hours * 3600
         self._max_size_bytes = int(max_size_gb * 1024**3)
+        self._memory_max_bytes = int(memory_max_size_gb * 1024**3)
         self._memory_cache: TTLCache[str, MemoryCachedSeries] = TTLCache(
-            maxsize=memory_max_entries, ttl=memory_ttl_minutes * 60
+            maxsize=self._memory_max_bytes,
+            ttl=memory_ttl_minutes * 60,
+            getsizeof=_series_size_bytes,
         )
+        self._memory_lock = threading.RLock()
         self._executor = ThreadPoolExecutor(
             max_workers=disk_write_concurrency, thread_name_prefix="dimsechord-tee"
         )
@@ -108,7 +112,8 @@ class DicomCache:
 
     # ── memory tier ──────────────────────────────────────────────
     def get_series_from_memory(self, study_uid: str, series_uid: str) -> MemoryCachedSeries | None:
-        return self._memory_cache.get(self._key(study_uid, series_uid))
+        with self._memory_lock:
+            return self._memory_cache.get(self._key(study_uid, series_uid))
 
     def put_series_to_memory(
         self,
@@ -126,7 +131,15 @@ class DicomCache:
             cached_at=time.time(),
             disk_persisted=disk_persisted,
         )
-        self._memory_cache[self._key(study_uid, series_uid)] = entry
+        try:
+            with self._memory_lock:
+                self._memory_cache[self._key(study_uid, series_uid)] = entry
+        except ValueError:  # single series larger than the whole memory budget
+            logger.warning(
+                f"Series {study_uid}/{series_uid} (~{_series_size_bytes(entry)} bytes) "
+                f"exceeds the memory tier budget of {self._memory_max_bytes} bytes — "
+                f"serving without memory caching"
+            )
         return entry
 
     # ── disk tier (index-backed) ─────────────────────────────────
@@ -278,6 +291,7 @@ class DicomCache:
 
     def shutdown(self) -> None:
         self._executor.shutdown(wait=True)
-        self._memory_cache.clear()
+        with self._memory_lock:
+            self._memory_cache.clear()
         self._index.close()
         logger.info("DicomCache shutdown complete")
