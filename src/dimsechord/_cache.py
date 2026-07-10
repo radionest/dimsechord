@@ -40,6 +40,22 @@ class MemoryCachedSeries:
     disk_persisted: bool = False
 
 
+_INSTANCE_OVERHEAD_BYTES = 16 * 1024
+_PIXEL_KEYWORDS = ("PixelData", "FloatPixelData", "DoubleFloatPixelData")
+
+
+def _series_size_bytes(entry: MemoryCachedSeries) -> int:
+    """Estimated RAM footprint: pixel payloads + fixed per-instance overhead."""
+    total = 0
+    for ds in entry.instances.values():
+        for keyword in _PIXEL_KEYWORDS:
+            value = getattr(ds, keyword, None)
+            if value is not None:
+                total += len(value)
+        total += _INSTANCE_OVERHEAD_BYTES
+    return total
+
+
 class DicomCache:
     """Two-tier cache: in-memory TTLCache + disk, with a SQLite index for disk."""
 

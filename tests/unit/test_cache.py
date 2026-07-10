@@ -3,7 +3,12 @@ import dataclasses
 import pytest
 from pydicom import dcmread
 
-from dimsechord._cache import DicomCache, MemoryCachedSeries
+from dimsechord._cache import (
+    _INSTANCE_OVERHEAD_BYTES,
+    DicomCache,
+    MemoryCachedSeries,
+    _series_size_bytes,
+)
 from tests.factories import make_instance
 
 
@@ -131,3 +136,31 @@ def test_load_series_unreadable_file_returns_none(cache, tmp_path) -> None:
     cache.mark_series_complete("ST", "SE", 2)
     (tmp_path / "cache" / "ST" / "SE" / "I1.dcm").write_bytes(b"garbage")
     assert cache.load_series_from_disk("ST", "SE") is None
+
+
+def test_series_size_bytes_sums_pixel_payloads_and_overhead() -> None:
+    entry = MemoryCachedSeries(
+        study_uid="ST",
+        series_uid="SE",
+        instances={
+            "I1": make_instance("ST", "SE", "I1", rows=4, columns=4),  # 16 pixel bytes
+            "I2": make_instance("ST", "SE", "I2", rows=8, columns=8),  # 64 pixel bytes
+        },
+        cached_at=0.0,
+    )
+    assert _series_size_bytes(entry) == 16 + 64 + 2 * _INSTANCE_OVERHEAD_BYTES
+
+
+def test_series_size_bytes_counts_float_pixels_and_bare_instances() -> None:
+    no_pixels = make_instance("ST", "SE", "I1")
+    del no_pixels.PixelData
+    float_pixels = make_instance("ST", "SE", "I2")
+    del float_pixels.PixelData
+    float_pixels.FloatPixelData = b"\x00" * 32
+    entry = MemoryCachedSeries(
+        study_uid="ST",
+        series_uid="SE",
+        instances={"I1": no_pixels, "I2": float_pixels},
+        cached_at=0.0,
+    )
+    assert _series_size_bytes(entry) == 32 + 2 * _INSTANCE_OVERHEAD_BYTES
