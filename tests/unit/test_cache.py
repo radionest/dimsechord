@@ -215,3 +215,20 @@ def test_oversized_series_served_uncached_with_warning(byte_capped_cache, caplog
     assert set(entry.instances) == set(instances)
     assert byte_capped_cache.get_series_from_memory("ST", "SE") is None
     assert "exceeds the memory tier budget" in caplog.text
+
+
+def test_oversized_reput_drops_stale_cached_entry(byte_capped_cache) -> None:
+    """A re-put that no longer fits must not leave the prior value servable."""
+    byte_capped_cache.put_series_to_memory("ST", "SE", _one_instance_series("SE"))
+    assert byte_capped_cache.get_series_from_memory("ST", "SE") is not None
+
+    oversized = {  # 4 x 81,920 = 327,680 bytes > budget
+        f"I{i}": make_instance("ST", "SE", f"I{i}", rows=256, columns=256) for i in range(4)
+    }
+    byte_capped_cache.put_series_to_memory("ST", "SE", oversized)
+    assert byte_capped_cache.get_series_from_memory("ST", "SE") is None
+
+
+def test_memory_max_size_gb_must_be_positive(tmp_path) -> None:
+    with pytest.raises(ValueError, match="memory_max_size_gb must be positive"):
+        DicomCache(base_dir=tmp_path / "cache", memory_max_size_gb=0)

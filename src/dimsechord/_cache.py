@@ -70,6 +70,8 @@ class DicomCache:
         memory_max_size_gb: float = 1.0,
         disk_write_concurrency: int = 4,
     ) -> None:
+        if memory_max_size_gb <= 0:
+            raise ValueError(f"memory_max_size_gb must be positive, got {memory_max_size_gb}")
         self._base_dir = Path(base_dir)
         db_path = Path(index_path) if index_path is not None else self._base_dir / "index.db"
         db_path.parent.mkdir(parents=True, exist_ok=True)
@@ -131,15 +133,20 @@ class DicomCache:
             cached_at=time.time(),
             disk_persisted=disk_persisted,
         )
-        try:
-            with self._memory_lock:
-                self._memory_cache[self._key(study_uid, series_uid)] = entry
-        except ValueError:  # single series larger than the whole memory budget
-            logger.warning(
-                f"Series {study_uid}/{series_uid} (~{_series_size_bytes(entry)} bytes) "
-                f"exceeds the memory tier budget of {self._memory_max_bytes} bytes — "
-                f"serving without memory caching"
-            )
+        key = self._key(study_uid, series_uid)
+        size = _series_size_bytes(entry)
+        with self._memory_lock:
+            if size > self._memory_max_bytes:
+                # Larger than the whole budget: drop any stale entry under this key
+                # rather than leave it silently servable from a prior, smaller put.
+                self._memory_cache.pop(key, None)
+                logger.warning(
+                    f"Series {study_uid}/{series_uid} (~{size} bytes) "
+                    f"exceeds the memory tier budget of {self._memory_max_bytes} bytes — "
+                    f"serving without memory caching"
+                )
+            else:
+                self._memory_cache[key] = entry
         return entry
 
     # ── disk tier (index-backed) ─────────────────────────────────
