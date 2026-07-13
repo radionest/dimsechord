@@ -41,14 +41,17 @@ implementations.
   (`per_aet_cap`) and find (`per_aet_find_cap`) leases; `lease` /
   `lease_find` block or raise `PoolExhaustedError` when every slot for
   an identity is busy.
-- `DicomCache` (`_cache.py`) — two-tier (memory + disk) backed by a
-  SQLite index; background disk writes run on a `ThreadPoolExecutor` so
-  the same cache instance is safe to use from both the asyncio HTTP face
-  and the synchronous DIMSE C-MOVE generator. The disk tier serves a
-  series only when a `series_complete` marker (written at clean
-  transport-stream end) matches the indexed row count; any desync —
-  pending tees, lost files, partial eviction, or an aborted pull — fails
-  the read and re-pulls, so a truncated series is never served.
+- `DicomCache` (`_cache.py`) — two-tier (memory + disk) backed by a SQLite
+  index; background disk writes run on a `ThreadPoolExecutor` so the same
+  cache instance is safe to use from both the asyncio HTTP face and the
+  synchronous DIMSE C-MOVE generator. The memory tier is byte-budgeted
+  (`memory_max_size_gb`, enforced through a `getsizeof` size estimate) and
+  guarded by an internal lock — cachetools caches are not thread-safe on
+  their own. The disk tier serves a series only when a `series_complete`
+  marker (written at clean transport-stream end) matches the indexed row
+  count; any desync — pending tees, lost files, partial eviction, or an
+  aborted pull — fails the read and re-pulls, so a truncated series is never
+  served.
 - `StorageSCP` (`_scp.py`) — a persistent Storage SCP whose C-STORE
   handler pushes received instances onto a queue that `PullEngine`
   streams from.

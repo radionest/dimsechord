@@ -1,9 +1,15 @@
 import dataclasses
+import logging
 
 import pytest
-from pydicom import dcmread
+from pydicom import Dataset, dcmread
 
-from dimsechord._cache import DicomCache, MemoryCachedSeries
+from dimsechord._cache import (
+    _INSTANCE_OVERHEAD_BYTES,
+    DicomCache,
+    MemoryCachedSeries,
+    _series_size_bytes,
+)
 from tests.factories import make_instance
 
 
@@ -131,3 +137,98 @@ def test_load_series_unreadable_file_returns_none(cache, tmp_path) -> None:
     cache.mark_series_complete("ST", "SE", 2)
     (tmp_path / "cache" / "ST" / "SE" / "I1.dcm").write_bytes(b"garbage")
     assert cache.load_series_from_disk("ST", "SE") is None
+
+
+def test_series_size_bytes_sums_pixel_payloads_and_overhead() -> None:
+    entry = MemoryCachedSeries(
+        study_uid="ST",
+        series_uid="SE",
+        instances={
+            "I1": make_instance("ST", "SE", "I1", rows=4, columns=4),  # 16 pixel bytes
+            "I2": make_instance("ST", "SE", "I2", rows=8, columns=8),  # 64 pixel bytes
+        },
+        cached_at=0.0,
+    )
+    assert _series_size_bytes(entry) == 16 + 64 + 2 * _INSTANCE_OVERHEAD_BYTES
+
+
+def test_series_size_bytes_counts_float_pixels_and_bare_instances() -> None:
+    no_pixels = make_instance("ST", "SE", "I1")
+    del no_pixels.PixelData
+    float_pixels = make_instance("ST", "SE", "I2")
+    del float_pixels.PixelData
+    float_pixels.FloatPixelData = b"\x00" * 32
+    entry = MemoryCachedSeries(
+        study_uid="ST",
+        series_uid="SE",
+        instances={"I1": no_pixels, "I2": float_pixels},
+        cached_at=0.0,
+    )
+    assert _series_size_bytes(entry) == 32 + 2 * _INSTANCE_OVERHEAD_BYTES
+
+
+_MEMORY_BUDGET_BYTES = 200_000  # fits two 81,920-byte series, not three
+
+
+@pytest.fixture
+def byte_capped_cache(tmp_path):
+    c = DicomCache(
+        base_dir=tmp_path / "cache",
+        index_path=tmp_path / "index.db",
+        memory_max_size_gb=_MEMORY_BUDGET_BYTES / 1024**3,
+    )
+    yield c
+    c.shutdown()
+
+
+def _one_instance_series(series_uid: str) -> dict[str, Dataset]:
+    """Estimated 81,920 bytes: 256x256 pixel bytes + one instance overhead."""
+    sop_uid = f"{series_uid}-I1"
+    return {sop_uid: make_instance("ST", series_uid, sop_uid, rows=256, columns=256)}
+
+
+def test_memory_tier_evicts_lru_when_over_byte_budget(byte_capped_cache) -> None:
+    for series in ("SA", "SB", "SC"):
+        byte_capped_cache.put_series_to_memory("ST", series, _one_instance_series(series))
+    assert byte_capped_cache.get_series_from_memory("ST", "SA") is None  # LRU evicted
+    assert byte_capped_cache.get_series_from_memory("ST", "SB") is not None
+    assert byte_capped_cache.get_series_from_memory("ST", "SC") is not None
+    assert byte_capped_cache._memory_cache.currsize <= _MEMORY_BUDGET_BYTES
+
+
+def test_memory_tier_get_refreshes_lru_recency(byte_capped_cache) -> None:
+    byte_capped_cache.put_series_to_memory("ST", "SA", _one_instance_series("SA"))
+    byte_capped_cache.put_series_to_memory("ST", "SB", _one_instance_series("SB"))
+    assert byte_capped_cache.get_series_from_memory("ST", "SA") is not None  # refresh SA
+    byte_capped_cache.put_series_to_memory("ST", "SC", _one_instance_series("SC"))
+    assert byte_capped_cache.get_series_from_memory("ST", "SB") is None  # SB was LRU
+    assert byte_capped_cache.get_series_from_memory("ST", "SA") is not None
+
+
+def test_oversized_series_served_uncached_with_warning(byte_capped_cache, caplog) -> None:
+    instances = {  # 4 x 81,920 = 327,680 bytes > budget
+        f"I{i}": make_instance("ST", "SE", f"I{i}", rows=256, columns=256) for i in range(4)
+    }
+    with caplog.at_level(logging.WARNING, logger="dimsechord._cache"):
+        entry = byte_capped_cache.put_series_to_memory("ST", "SE", instances)
+    assert isinstance(entry, MemoryCachedSeries)
+    assert set(entry.instances) == set(instances)
+    assert byte_capped_cache.get_series_from_memory("ST", "SE") is None
+    assert "exceeds the memory tier budget" in caplog.text
+
+
+def test_oversized_reput_drops_stale_cached_entry(byte_capped_cache) -> None:
+    """A re-put that no longer fits must not leave the prior value servable."""
+    byte_capped_cache.put_series_to_memory("ST", "SE", _one_instance_series("SE"))
+    assert byte_capped_cache.get_series_from_memory("ST", "SE") is not None
+
+    oversized = {  # 4 x 81,920 = 327,680 bytes > budget
+        f"I{i}": make_instance("ST", "SE", f"I{i}", rows=256, columns=256) for i in range(4)
+    }
+    byte_capped_cache.put_series_to_memory("ST", "SE", oversized)
+    assert byte_capped_cache.get_series_from_memory("ST", "SE") is None
+
+
+def test_memory_max_size_gb_must_be_positive(tmp_path) -> None:
+    with pytest.raises(ValueError, match="memory_max_size_gb must be positive"):
+        DicomCache(base_dir=tmp_path / "cache", memory_max_size_gb=0)

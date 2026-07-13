@@ -40,8 +40,24 @@ class MemoryCachedSeries:
     disk_persisted: bool = False
 
 
+_INSTANCE_OVERHEAD_BYTES = 16 * 1024
+_PIXEL_KEYWORDS = ("PixelData", "FloatPixelData", "DoubleFloatPixelData")
+
+
+def _series_size_bytes(entry: MemoryCachedSeries) -> int:
+    """Estimated RAM footprint: pixel payloads + fixed per-instance overhead."""
+    total = 0
+    for ds in entry.instances.values():
+        for keyword in _PIXEL_KEYWORDS:
+            value = getattr(ds, keyword, None)
+            if value is not None:
+                total += len(value)
+        total += _INSTANCE_OVERHEAD_BYTES
+    return total
+
+
 class DicomCache:
-    """Two-tier cache: in-memory TTLCache + disk, with a SQLite index for disk."""
+    """Two-tier cache: byte-bounded in-memory TTLCache + disk, with a SQLite index for disk."""
 
     def __init__(
         self,
@@ -51,18 +67,24 @@ class DicomCache:
         ttl_hours: int = 24,
         max_size_gb: float = 10.0,
         memory_ttl_minutes: int = 30,
-        memory_max_entries: int = 50,
+        memory_max_size_gb: float = 1.0,
         disk_write_concurrency: int = 4,
     ) -> None:
+        if memory_max_size_gb <= 0:
+            raise ValueError(f"memory_max_size_gb must be positive, got {memory_max_size_gb}")
         self._base_dir = Path(base_dir)
         db_path = Path(index_path) if index_path is not None else self._base_dir / "index.db"
         db_path.parent.mkdir(parents=True, exist_ok=True)
         self._index = CacheIndex(db_path)
         self._ttl_seconds = ttl_hours * 3600
         self._max_size_bytes = int(max_size_gb * 1024**3)
+        self._memory_max_bytes = int(memory_max_size_gb * 1024**3)
         self._memory_cache: TTLCache[str, MemoryCachedSeries] = TTLCache(
-            maxsize=memory_max_entries, ttl=memory_ttl_minutes * 60
+            maxsize=self._memory_max_bytes,
+            ttl=memory_ttl_minutes * 60,
+            getsizeof=_series_size_bytes,
         )
+        self._memory_lock = threading.RLock()
         self._executor = ThreadPoolExecutor(
             max_workers=disk_write_concurrency, thread_name_prefix="dimsechord-tee"
         )
@@ -92,7 +114,8 @@ class DicomCache:
 
     # ── memory tier ──────────────────────────────────────────────
     def get_series_from_memory(self, study_uid: str, series_uid: str) -> MemoryCachedSeries | None:
-        return self._memory_cache.get(self._key(study_uid, series_uid))
+        with self._memory_lock:
+            return self._memory_cache.get(self._key(study_uid, series_uid))
 
     def put_series_to_memory(
         self,
@@ -110,7 +133,20 @@ class DicomCache:
             cached_at=time.time(),
             disk_persisted=disk_persisted,
         )
-        self._memory_cache[self._key(study_uid, series_uid)] = entry
+        key = self._key(study_uid, series_uid)
+        size = _series_size_bytes(entry)
+        with self._memory_lock:
+            if size > self._memory_max_bytes:
+                # Larger than the whole budget: drop any stale entry under this key
+                # rather than leave it silently servable from a prior, smaller put.
+                self._memory_cache.pop(key, None)
+                logger.warning(
+                    f"Series {study_uid}/{series_uid} (~{size} bytes) "
+                    f"exceeds the memory tier budget of {self._memory_max_bytes} bytes — "
+                    f"serving without memory caching"
+                )
+            else:
+                self._memory_cache[key] = entry
         return entry
 
     # ── disk tier (index-backed) ─────────────────────────────────
@@ -262,6 +298,7 @@ class DicomCache:
 
     def shutdown(self) -> None:
         self._executor.shutdown(wait=True)
-        self._memory_cache.clear()
+        with self._memory_lock:
+            self._memory_cache.clear()
         self._index.close()
         logger.info("DicomCache shutdown complete")

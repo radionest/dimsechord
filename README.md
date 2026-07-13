@@ -77,6 +77,10 @@ async def main() -> None:
 asyncio.run(main())
 ```
 
+> **0.6.0 (breaking):** `DicomCache`'s memory tier is now sized by bytes, not
+> entry count — `memory_max_entries` (default `50`) is replaced by
+> `memory_max_size_gb` (default `1.0`).
+
 > **0.5.1:** `StorageSCP` accepts all transfer syntaxes by default and the new
 > `build_storage_scu_contexts()` builds forwarding-SCU contexts, so compressed
 > objects pass through verbatim. C-GET now negotiates a curated storage-class

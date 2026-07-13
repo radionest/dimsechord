@@ -1,5 +1,23 @@
 # Changelog
 
+## 0.6.0 — 2026-07-13
+
+`DicomCache`'s memory tier is now sized by bytes, not entry count.
+
+### Changed
+
+- **Breaking:** the `memory_max_entries` (default `50`) constructor
+  parameter is replaced by `memory_max_size_gb` (default `1.0`). Eviction
+  now reflects actual per-series memory footprint (pixel payloads plus a
+  fixed per-instance overhead) instead of a fixed item count.
+
+### Fixed
+
+- `put_series_to_memory` no longer leaves a stale, previously-cached entry
+  servable when a later put for the same key exceeds the memory budget.
+- `DicomCache` now rejects a non-positive `memory_max_size_gb` at
+  construction instead of silently treating every series as oversized.
+
 ## 0.5.1 — 2026-07-06
 
 Compressed transfer syntaxes now pass through verbatim end to end.
