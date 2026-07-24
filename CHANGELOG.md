@@ -1,5 +1,28 @@
 # Changelog
 
+## 0.7.0 — 2026-07-24
+
+`StoreSession` adds a persistent C-STORE SCU session with verbatim DIMSE
+status pass-through.
+
+### Added
+
+- `StoreSession` — a persistent, association-scoped C-STORE SCU: lazy open,
+  verbatim `int` DIMSE status pass-through (success, warnings, and failures
+  are all return values, never exceptions), typed `NoPresentationContextError`
+  on a context miss, duplicate-safe reconnect-on-drop, and idempotent
+  `close()` plus context-manager support. Deliberately bypasses
+  `DicomClient.set_max_concurrent_associations` (callers govern session
+  concurrency).
+- `NoPresentationContextError` — a `DimsechordError` (not an
+  `AssociationError`) carrying `sop_class_uid`/`transfer_syntax`, raised
+  before sending when no accepted presentation context matches; the
+  association stays open and usable.
+- `build_storage_scp_contexts()` — the acceptor-side mirror of
+  `build_storage_scu_contexts()`, built from the same storage-class ×
+  transfer-syntax matrix: every instance a `StoreSession` can propose
+  upstream is accepted by an SCP built from it.
+
 ## 0.6.0 — 2026-07-13
 
 `DicomCache`'s memory tier is now sized by bytes, not entry count.
