@@ -8,6 +8,7 @@ paths:
   - "src/dimsechord/_handlers.py"
   - "src/dimsechord/_bridge.py"
   - "src/dimsechord/_query_engine.py"
+  - "src/dimsechord/_store_session.py"
 ---
 
 # Concurrency model: sync core, thin async adapters
@@ -22,8 +23,10 @@ dimsechord's core is therefore synchronous and thread-safe, with thin
 - **Sync core**: `_scu.py` (`DicomOperations`, including the raw
   `find_iter` generator), `_scp.py` (`StorageSCP`'s receive queue),
   `_pull_engine.py`'s synchronous generator, `_query_engine.py`'s
-  `iter_find`, `_cache.py`'s read/write paths — all safe to call from a
-  pynetdicom worker thread.
+  `iter_find`, `_cache.py`'s read/write paths, `_store_session.py`
+  (`StoreSession`) — all safe to call from a pynetdicom worker thread;
+  `StoreSession` alone is single-owner (no internal locking), so one
+  session is used by one thread at a time.
 - **Thin async adapter**: `DicomClient`, `PullEngine`'s async methods and
   `QueryEngine.stream_find` run the sync path in a worker thread and
   bridge each item back to the asyncio event loop — the streaming faces

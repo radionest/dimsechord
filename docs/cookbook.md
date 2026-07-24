@@ -12,6 +12,7 @@ client = DicomClient(calling_aet="MYSCU")
 
 - [Query (C-FIND)](#query-c-find)
 - [Store to a peer (C-STORE)](#store-to-a-peer-c-store)
+- [Relay stores over one association (StoreSession)](#relay-stores-over-one-association-storesession)
 - [Forward compressed instances (presentation contexts for a proxy SCU)](#forward-compressed-instances-presentation-contexts-for-a-proxy-scu)
 - [Retrieve (C-MOVE vs C-GET)](#retrieve-c-move-vs-c-get)
 - [Receive instances (C-STORE SCP)](#receive-instances-c-store-scp)
@@ -66,6 +67,47 @@ print(result.total_sent, result.total_failed, result.failed_sop_uids)
 `store_instance` returns a `bool`; `store_instances_batch` returns a
 `BatchStoreResult` summarizing the batch.
 
+## Relay stores over one association (StoreSession)
+
+`StoreSession` holds one persistent association open across many `store`
+calls, for a relay that forwards each inbound instance upstream without
+renegotiating a fresh association per instance. `store` passes the peer's
+DIMSE status through verbatim as a plain `int` — success and warning are
+both just values to branch on, never exceptions:
+
+```python
+from pydicom import dcmread
+
+from dimsechord import DicomNode, StoreSession
+
+archive = DicomNode(aet="ARCHIVE", host="pacs.example.org", port=104)
+
+with StoreSession(archive, calling_aet="PROXY") as session:
+    status: int = session.store(dcmread("image.dcm"))
+    if status == 0x0000:
+        ...                 # success
+    elif status == 0xB000:
+        ...                 # warning (e.g. coercion of data elements) — still delivered
+    else:
+        ...                 # non-success status — handle per your relay's policy
+```
+
+A per-instance presentation-context miss raises `NoPresentationContextError`
+before anything is sent, leaving the association open and usable for the
+next `store` — a relay typically maps it to DIMSE status `0x0122` in its own
+response to the sender.
+
+A dropped association reopens transparently only when nothing was provably
+sent yet; a failure discovered mid-`send_c_store` is ambiguous instead, so
+`store` raises `AssociationError` and never auto-resends that instance.
+
+Always `close()` the session, or use the context manager as above: a relay
+association is idle by design, so `StoreSession` disables pynetdicom's
+default 60 s idle `network_timeout` — meaning a leaked session never
+self-terminates and keeps its association open. `StoreSession` also does
+not draw from `DicomClient.set_max_concurrent_associations`'s global cap —
+callers are responsible for bounding session concurrency themselves.
+
 ## Forward compressed instances (presentation contexts for a proxy SCU)
 
 A proxy must forward objects verbatim. pynetdicom converts freely between
@@ -103,6 +145,21 @@ contexts = build_storage_scu_contexts(
 The defaults produce 106 contexts, leaving headroom under the 128 limit;
 `ValueError` is raised if a customization overflows it. On the receive side no
 tuning is needed: `StorageSCP` accepts every transfer syntax by default.
+
+A proxy's own inbound side — built directly with pynetdicom's `AE` rather
+than `StorageSCP` — can instead accept exactly the curated matrix, with
+`build_storage_scp_contexts()`:
+
+```python
+from dimsechord import build_storage_scp_contexts
+
+for cx in build_storage_scp_contexts():
+    ae.add_supported_context(cx.abstract_syntax, cx.transfer_syntax)
+```
+
+The two builders mirror for identical arguments: whatever such an SCP
+accepts, a `StoreSession` built from the same matrix can always propose
+upstream.
 
 ## Retrieve (C-MOVE vs C-GET)
 
@@ -364,3 +421,4 @@ except DimsechordError:
 | `PoolExhaustedError` | `AssociationPool.lease` — or `lease_find`, on the first iteration of `iter_find`/`stream_find` — times out with no free slot |
 | `MoveToSelfError` | a C-MOVE completes reporting zero sub-operations — the query matched nothing (under-delivery/misrouting is `AssociationError`) |
 | `ArrivalTimeoutError` | no instance arrives within the configured `arrival_timeout` |
+| `NoPresentationContextError` | `StoreSession.store` found no accepted presentation context for the dataset — the association stays usable; nothing was sent |
