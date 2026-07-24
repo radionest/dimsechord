@@ -17,6 +17,7 @@ from dimsechord import (
     build_storage_scu_contexts,
 )
 from dimsechord._exceptions import NoPresentationContextError
+from dimsechord._scu import DicomOperations
 from dimsechord._store_session import StoreSession
 from tests.factories import make_compressed_instance, make_instance
 from tests.fake_pacs import ScriptedStoreScp
@@ -488,5 +489,39 @@ def test_reconnect_raises_association_error_after_repeated_runtime_errors(
             session.store(ds)
         assert calls["n"] == 2
         assert scp.received == []
+    finally:
+        session.close()
+
+
+# ── StoreSession: concurrency contract (D9) ─────────────────────────────────
+
+
+class _PoisonedSemaphore:
+    """Stand-in for DicomOperations._association_semaphore that fails any use —
+    proves StoreSession never touches it."""
+
+    def acquire(self) -> None:
+        raise AssertionError("StoreSession must not use the global association semaphore")
+
+    def release(self) -> None:
+        raise AssertionError("StoreSession must not use the global association semaphore")
+
+
+@pytest.mark.timeout(30)
+def test_session_bypasses_global_semaphore(monkeypatch, scripted_scp, seeded_study) -> None:
+    """StoreSession opens its own AE.associate directly and never routes
+    through DicomOperations._association — it is exempt from
+    DicomClient.set_max_concurrent_associations by construction (D9). Poisoning
+    the class-level semaphore proves it: store() would raise AssertionError
+    instead of returning a status if it were ever touched."""
+    monkeypatch.setattr(DicomOperations, "_association_semaphore", _PoisonedSemaphore())
+    _scp, peer = scripted_scp
+    session = StoreSession(peer, calling_aet="SENDER")
+    try:
+        study = seeded_study["study"][0]
+        series = seeded_study["series"][0]
+        sop_uid = seeded_study[series][0]
+        ds = make_instance(study, series, sop_uid)
+        assert session.store(ds) == 0x0000
     finally:
         session.close()
