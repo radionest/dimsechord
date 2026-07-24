@@ -7,6 +7,8 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from collections.abc import Iterator
 
+    from pynetdicom.presentation import PresentationContext
+
 import threading
 import time
 
@@ -22,7 +24,7 @@ from pynetdicom.sop_class import (  # type: ignore[attr-defined]
     Verification,
 )
 
-from dimsechord import build_storage_scu_contexts
+from dimsechord import build_storage_scp_contexts, build_storage_scu_contexts
 
 
 class FakePacs:
@@ -230,3 +232,52 @@ class FakePacs:
         yield len(matches)  # 1st yield: number of C-STORE sub-operations
         for ds in matches:
             yield (0xFF00, ds)  # pynetdicom sends each as C-STORE on this association
+
+
+class ScriptedStoreScp:
+    """Scripted C-STORE SCP: per-instance status script plus failure injection."""
+
+    def __init__(self, contexts: list[PresentationContext] | None = None) -> None:
+        self.statuses: list[int] = []
+        self.abort_next = False
+        self.received: list[tuple[str, str]] = []
+        self.associations = 0
+        self._contexts = contexts if contexts is not None else build_storage_scp_contexts()
+        self._server: object | None = None
+        self._lock = threading.Lock()
+
+    def start(self, port: int) -> None:
+        ae = AE(ae_title="STORESCP")
+        for cx in self._contexts:
+            if cx.abstract_syntax is not None:
+                ae.add_supported_context(cx.abstract_syntax, cx.transfer_syntax)
+        handlers = [
+            (evt.EVT_C_STORE, self._on_store),
+            (evt.EVT_ESTABLISHED, self._on_established),
+        ]
+        self._server = ae.start_server(("127.0.0.1", port), block=False, evt_handlers=handlers)
+
+    def stop(self) -> None:
+        if self._server is not None:
+            self._server.shutdown()  # type: ignore[attr-defined]
+            self._server = None
+
+    def abort_all(self) -> None:
+        """Server-side abort of every live association (drop-between-stores)."""
+        for assoc in list(self._server.active_associations):  # type: ignore[attr-defined]
+            assoc.abort()
+
+    def _on_established(self, event: evt.Event) -> None:  # noqa: ARG002
+        with self._lock:
+            self.associations += 1
+
+    def _on_store(self, event: evt.Event) -> int:
+        with self._lock:
+            self.received.append(
+                (str(event.dataset.SOPInstanceUID), str(event.file_meta.TransferSyntaxUID))
+            )
+            if self.abort_next:
+                self.abort_next = False
+                event.assoc.abort()
+                return 0x0000  # abort wins the race; the peer never sees this
+            return self.statuses.pop(0) if self.statuses else 0x0000

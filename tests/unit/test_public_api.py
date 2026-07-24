@@ -45,6 +45,7 @@ EXPECTED_PUBLIC = {
     "StudyResult",
     "TagValue",
     "build_multipart_response",
+    "build_storage_scp_contexts",
     "build_storage_scu_contexts",
     "convert_datasets_to_dicom_json",
     "dataset_to_dicom_json",

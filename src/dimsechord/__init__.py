@@ -49,6 +49,7 @@ from dimsechord._presentation import (
     DEFAULT_COMPRESSED_TRANSFER_SYNTAXES,
     DEFAULT_IMAGE_STORAGE_CLASSES,
     DEFAULT_OTHER_STORAGE_CLASSES,
+    build_storage_scp_contexts,
     build_storage_scu_contexts,
 )
 from dimsechord._pull_engine import PullEngine
@@ -91,6 +92,7 @@ __all__ = [  # noqa: RUF022
     "StudyResult",
     "TagValue",
     "build_multipart_response",
+    "build_storage_scp_contexts",
     "build_storage_scu_contexts",
     "convert_datasets_to_dicom_json",
     "dataset_to_dicom_json",
