@@ -2,11 +2,15 @@ import pytest
 from pydicom import Dataset
 from pynetdicom import AE
 from pynetdicom.sop_class import (  # type: ignore[attr-defined]
+    PatientRootQueryRetrieveInformationModelFind,
+    PatientRootQueryRetrieveInformationModelMove,
     StudyRootQueryRetrieveInformationModelFind,
+    StudyRootQueryRetrieveInformationModelMove,
     Verification,
 )
 
 from dimsechord._client import DicomClient
+from dimsechord._exceptions import AssociationError
 from dimsechord._models import AssociationConfig, DicomNode, ImageQuery, SeriesQuery, StudyQuery
 from dimsechord._scu import DicomOperations
 from tests.factories import make_instance
@@ -232,3 +236,43 @@ def test_find_studies_carries_patient_id_as_study_level_key(
     ops.find_studies(_config(fake_pacs), StudyQuery())
     assert fake_pacs.find_contexts[-1] == StudyRootQueryRetrieveInformationModelFind
     assert "PatientID" in fake_pacs.find_identifiers[-1]
+
+
+@pytest.mark.timeout(30)
+def test_patient_root_only_peer_raises_association_error(free_port) -> None:
+    """Zero accepted contexts → pynetdicom aborts; the error names what was rejected."""
+    pacs = FakePacs(aet="PRONLY")
+    port = free_port()
+    pacs.start(
+        port,
+        qr_contexts=[
+            PatientRootQueryRetrieveInformationModelFind,
+            PatientRootQueryRetrieveInformationModelMove,
+        ],
+    )
+    try:
+        ops = DicomOperations(calling_aet="TESTSCU")
+        config = AssociationConfig(
+            calling_aet="TESTSCU", called_aet="PRONLY", peer_host="127.0.0.1", peer_port=port
+        )
+        with pytest.raises(AssociationError, match="Study Root"):
+            ops.find_studies(config, StudyQuery())
+    finally:
+        pacs.stop()
+
+
+@pytest.mark.timeout(30)
+def test_find_context_refused_raises_association_error(free_port) -> None:
+    """Peer accepts SR-MOVE but not SR-FIND → established assoc, wrapped ValueError."""
+    pacs = FakePacs(aet="MOVEONLY")
+    port = free_port()
+    pacs.start(port, qr_contexts=[StudyRootQueryRetrieveInformationModelMove])
+    try:
+        ops = DicomOperations(calling_aet="TESTSCU")
+        config = AssociationConfig(
+            calling_aet="TESTSCU", called_aet="MOVEONLY", peer_host="127.0.0.1", peer_port=port
+        )
+        with pytest.raises(AssociationError, match="Study Root C-FIND"):
+            ops.find_studies(config, StudyQuery())
+    finally:
+        pacs.stop()

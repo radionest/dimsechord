@@ -1,7 +1,12 @@
 import threading
 
 import pytest
+from pynetdicom.sop_class import (  # type: ignore[attr-defined]
+    StudyRootQueryRetrieveInformationModelFind,
+    StudyRootQueryRetrieveInformationModelMove,
+)
 
+from dimsechord._exceptions import AssociationError
 from dimsechord._models import (
     AssociationConfig,
     QueryRetrieveLevel,
@@ -11,6 +16,7 @@ from dimsechord._models import (
 )
 from dimsechord._scp import StorageSCP
 from dimsechord._scu import DicomOperations
+from tests.fake_pacs import FakePacs
 
 
 @pytest.mark.timeout(60)
@@ -112,3 +118,39 @@ def test_retrieve_via_move_requires_running_scp(fake_pacs, seeded_study) -> None
 
     with pytest.raises(RuntimeError, match="Storage SCP not running"):
         ops.retrieve_via_move(config, request, storage, local_aet="NOTSCP", scp=stopped_scp)
+
+
+@pytest.mark.timeout(30)
+def test_move_identifier_is_study_root_unique_keys_only(fake_pacs, seeded_study) -> None:
+    study, series = seeded_study["study"][0], seeded_study["series"][0]
+    ops = DicomOperations(calling_aet="MOVESCU")
+    config = AssociationConfig(
+        calling_aet="MOVESCU", called_aet=fake_pacs.aet,
+        peer_host="127.0.0.1", peer_port=fake_pacs.port,
+    )
+    request = RetrieveRequest(
+        level=QueryRetrieveLevel.SERIES, study_instance_uid=study, series_instance_uid=series
+    )
+    # unknown dest is fine: capture happens first
+    ops.move_study(config, request, destination_aet="NOWHERE")
+    assert fake_pacs.move_contexts[-1] == StudyRootQueryRetrieveInformationModelMove
+    assert sorted(el.keyword for el in fake_pacs.move_identifiers[-1]) == [
+        "QueryRetrieveLevel", "SeriesInstanceUID", "StudyInstanceUID",
+    ]
+
+
+@pytest.mark.timeout(30)
+def test_move_context_refused_raises_association_error(free_port) -> None:
+    pacs = FakePacs(aet="FINDONLY")
+    port = free_port()
+    pacs.start(port, qr_contexts=[StudyRootQueryRetrieveInformationModelFind])
+    try:
+        ops = DicomOperations(calling_aet="MOVESCU")
+        config = AssociationConfig(
+            calling_aet="MOVESCU", called_aet="FINDONLY", peer_host="127.0.0.1", peer_port=port
+        )
+        request = RetrieveRequest(level=QueryRetrieveLevel.STUDY, study_instance_uid="1.2.3")
+        with pytest.raises(AssociationError, match="Study Root C-MOVE"):
+            ops.move_study(config, request, destination_aet="ANY")
+    finally:
+        pacs.stop()

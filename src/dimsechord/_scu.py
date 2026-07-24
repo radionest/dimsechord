@@ -22,9 +22,6 @@ from pynetdicom import AE, build_role
 from pynetdicom.pdu_primitives import SCP_SCU_RoleSelectionNegotiation
 from pynetdicom.presentation import DEFAULT_TRANSFER_SYNTAXES, build_context
 from pynetdicom.sop_class import (  # type: ignore[attr-defined]
-    PatientRootQueryRetrieveInformationModelFind,
-    PatientRootQueryRetrieveInformationModelGet,
-    PatientRootQueryRetrieveInformationModelMove,
     StudyRootQueryRetrieveInformationModelFind,
     StudyRootQueryRetrieveInformationModelGet,
     StudyRootQueryRetrieveInformationModelMove,
@@ -231,8 +228,6 @@ class DicomOperations:
         """Create Application Entity for C-FIND / C-MOVE operations."""
         ae = AE(ae_title=self.calling_aet)
         ae.maximum_pdu_size = self.max_pdu
-        ae.add_requested_context(PatientRootQueryRetrieveInformationModelFind)
-        ae.add_requested_context(PatientRootQueryRetrieveInformationModelMove)
         ae.add_requested_context(StudyRootQueryRetrieveInformationModelFind)
         ae.add_requested_context(StudyRootQueryRetrieveInformationModelMove)
         return ae
@@ -243,13 +238,13 @@ class DicomOperations:
         C-GET delivers instances as C-STORE sub-operations over the SAME
         association, so we request SCP role for each storage SOP class. The
         storage contexts come from ``build_storage_scu_contexts`` with a
-        budget of 126 (two slots go to the GET information models): the
-        curated image classes negotiate compressed transfer syntaxes so
-        compressed instances arrive verbatim instead of failing.
+        budget of 126 (one slot goes to the Study Root GET information
+        model, leaving one spare): the curated image classes negotiate
+        compressed transfer syntaxes so compressed instances arrive
+        verbatim instead of failing.
         """
         ae = AE(ae_title=self.calling_aet)
         ae.maximum_pdu_size = self.max_pdu
-        ae.add_requested_context(PatientRootQueryRetrieveInformationModelGet)
         ae.add_requested_context(StudyRootQueryRetrieveInformationModelGet)
         roles: list[SCP_SCU_RoleSelectionNegotiation] = []
         negotiated: set[str] = set()
@@ -296,7 +291,17 @@ class DicomOperations:
                 **kwargs,
             )
             if not assoc.is_established:
+                rejected = [
+                    cx.abstract_syntax.name
+                    for cx in assoc.rejected_contexts
+                    if cx.abstract_syntax is not None
+                ]
                 logger.error(f"Failed to establish association with {config.called_aet}")
+                if rejected and not assoc.accepted_contexts:
+                    raise AssociationError(
+                        "Peer accepted none of the requested presentation contexts: "
+                        + ", ".join(rejected)
+                    )
                 raise AssociationError("Failed to establish DICOM association")
             try:
                 yield assoc
@@ -442,7 +447,12 @@ class DicomOperations:
 
         with self._association(ae, config) as assoc:
             results: list[StudyResult] = []
-            responses = assoc.send_c_find(ds, StudyRootQueryRetrieveInformationModelFind)
+            try:
+                responses = assoc.send_c_find(ds, StudyRootQueryRetrieveInformationModelFind)
+            except ValueError as e:
+                raise AssociationError(
+                    f"Peer did not accept the Study Root C-FIND presentation context: {e}"
+                ) from e
 
             for status, identifier in responses:
                 if not status:
@@ -479,7 +489,12 @@ class DicomOperations:
 
         with self._association(ae, config) as assoc:
             results: list[SeriesResult] = []
-            responses = assoc.send_c_find(ds, StudyRootQueryRetrieveInformationModelFind)
+            try:
+                responses = assoc.send_c_find(ds, StudyRootQueryRetrieveInformationModelFind)
+            except ValueError as e:
+                raise AssociationError(
+                    f"Peer did not accept the Study Root C-FIND presentation context: {e}"
+                ) from e
 
             for status, identifier in responses:
                 if not status:
@@ -513,7 +528,12 @@ class DicomOperations:
 
         with self._association(ae, config) as assoc:
             results: list[ImageResult] = []
-            responses = assoc.send_c_find(ds, StudyRootQueryRetrieveInformationModelFind)
+            try:
+                responses = assoc.send_c_find(ds, StudyRootQueryRetrieveInformationModelFind)
+            except ValueError as e:
+                raise AssociationError(
+                    f"Peer did not accept the Study Root C-FIND presentation context: {e}"
+                ) from e
 
             for status, identifier in responses:
                 if not status:
@@ -595,9 +615,14 @@ class DicomOperations:
 
         with self._association(ae, config) as assoc:
             result = RetrieveResult(status="pending")
-            responses = assoc.send_c_move(
-                ds, destination_aet, PatientRootQueryRetrieveInformationModelMove
-            )
+            try:
+                responses = assoc.send_c_move(
+                    ds, destination_aet, StudyRootQueryRetrieveInformationModelMove
+                )
+            except ValueError as e:
+                raise AssociationError(
+                    f"Peer did not accept the Study Root C-MOVE presentation context: {e}"
+                ) from e
 
             for status, _identifier in responses:
                 if not status:
@@ -664,11 +689,11 @@ class DicomOperations:
                 result = RetrieveResult(status="pending")
                 try:
                     responses = assoc.send_c_get(
-                        ds, PatientRootQueryRetrieveInformationModelGet
+                        ds, StudyRootQueryRetrieveInformationModelGet
                     )
                 except ValueError as e:
                     raise AssociationError(
-                        f"Peer did not accept the C-GET presentation context: {e}"
+                        f"Peer did not accept the Study Root C-GET presentation context: {e}"
                     ) from e
 
                 for status, _identifier in responses:
@@ -756,9 +781,14 @@ class DicomOperations:
 
             with self._association(ae, config) as assoc:
                 result = RetrieveResult(status="pending")
-                responses = assoc.send_c_move(
-                    ds, local_aet, PatientRootQueryRetrieveInformationModelMove
-                )
+                try:
+                    responses = assoc.send_c_move(
+                        ds, local_aet, StudyRootQueryRetrieveInformationModelMove
+                    )
+                except ValueError as e:
+                    raise AssociationError(
+                        f"Peer did not accept the Study Root C-MOVE presentation context: {e}"
+                    ) from e
 
                 total_expected = None
                 for status, _identifier in responses:
