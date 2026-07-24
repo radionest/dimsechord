@@ -16,6 +16,11 @@ handlers, so you bring your own web layer.
 - **C-STORE SCP** — receive incoming instances with `StorageSCP`, one listener
   per distinct port; multiple AETs may share a port. All transfer syntaxes
   are accepted by default, so compressed objects arrive verbatim.
+- **C-STORE SCU session** — `StoreSession` is a persistent, association-scoped
+  C-STORE sender: the peer's DIMSE status passes through verbatim as an
+  `int` (success, warning, and failure alike), and a presentation-context
+  miss raises `NoPresentationContextError` without tearing down the
+  association.
 - **AssociationPool** — manage multiple AE-Title identities with per-AET
   concurrency limits.
 - **Two-tier cache** — in-memory + disk, backed by a SQLite instance index.
@@ -76,6 +81,12 @@ async def main() -> None:
 
 asyncio.run(main())
 ```
+
+> **0.7.0:** `StoreSession` is a persistent C-STORE SCU session with verbatim
+> DIMSE status pass-through — success, warning, and failure codes all return
+> as an `int`, never raised. A presentation-context miss raises the new
+> `NoPresentationContextError` instead; `build_storage_scp_contexts()` is the
+> new acceptor-side mirror of `build_storage_scu_contexts()`.
 
 > **0.6.0 (breaking):** `DicomCache`'s memory tier is now sized by bytes, not
 > entry count — `memory_max_entries` (default `50`) is replaced by
