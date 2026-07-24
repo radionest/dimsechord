@@ -29,6 +29,7 @@ from dimsechord._exceptions import (
     DimsechordError,
     FindFailedError,
     MoveToSelfError,
+    NoPresentationContextError,
     PoolExhaustedError,
 )
 from dimsechord._models import (
@@ -55,6 +56,7 @@ from dimsechord._presentation import (
 from dimsechord._pull_engine import PullEngine
 from dimsechord._query_engine import QueryEngine
 from dimsechord._scp import StorageSCP
+from dimsechord._store_session import StoreSession
 
 __version__ = "0.6.0"
 
@@ -80,6 +82,7 @@ __all__ = [  # noqa: RUF022
     "ImageResult",
     "MemoryCachedSeries",
     "MoveToSelfError",
+    "NoPresentationContextError",
     "PoolExhaustedError",
     "PullEngine",
     "QueryEngine",
@@ -88,6 +91,7 @@ __all__ = [  # noqa: RUF022
     "SeriesQuery",
     "SeriesResult",
     "StorageSCP",
+    "StoreSession",
     "StudyQuery",
     "StudyResult",
     "TagValue",
