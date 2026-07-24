@@ -6,6 +6,7 @@ the surface is a deliberate act: update ``EXPECTED_PUBLIC`` in the same commit.
 """
 
 import importlib
+import inspect
 import threading
 
 import pytest
@@ -137,3 +138,28 @@ def test_set_max_concurrent_associations_rejects_non_positive() -> None:
             assert DicomOperations._association_semaphore is saved
     finally:
         DicomOperations._association_semaphore = saved
+
+
+def test_client_retrieve_methods_have_no_patient_id_parameter() -> None:
+    retrieve_methods = [
+        "move_study", "move_series", "get_study",
+        "get_series", "get_study_to_memory", "get_series_to_memory",
+    ]
+    for name in retrieve_methods:
+        params = inspect.signature(getattr(DicomClient, name)).parameters
+        assert "patient_id" not in params, name
+
+
+def test_client_retrieve_optional_parameters_are_keyword_only() -> None:
+    """Removing patient_id shifted the positional slots: a legacy positional
+    patient_id argument must fail with TypeError, not silently bind into the
+    optional parameter that took its place."""
+    retrieve_methods = [
+        "move_study", "move_series", "get_study",
+        "get_series", "get_study_to_memory", "get_series_to_memory",
+    ]
+    for name in retrieve_methods:
+        params = inspect.signature(getattr(DicomClient, name)).parameters
+        for param in params.values():
+            if param.default is not inspect.Parameter.empty:
+                assert param.kind is inspect.Parameter.KEYWORD_ONLY, (name, param.name)

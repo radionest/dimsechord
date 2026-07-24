@@ -21,7 +21,6 @@ MODALITIES_SEPARATOR = "\\"
 class QueryRetrieveLevel(StrEnum):
     """DICOM Query/Retrieve levels."""
 
-    PATIENT = "PATIENT"
     STUDY = "STUDY"
     SERIES = "SERIES"
     IMAGE = "IMAGE"
@@ -126,7 +125,6 @@ class RetrieveRequest:
     """Request for a C-MOVE operation."""
 
     level: QueryRetrieveLevel
-    patient_id: str | None = None
     study_instance_uid: str | None = None
     series_instance_uid: str | None = None
     sop_instance_uid: str | None = None
@@ -134,8 +132,6 @@ class RetrieveRequest:
     def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary for dataset creation."""
         data: dict[str, Any] = {"QueryRetrieveLevel": self.level.value}
-        if self.patient_id:
-            data["PatientID"] = self.patient_id
         if self.study_instance_uid:
             data["StudyInstanceUID"] = self.study_instance_uid
         if self.series_instance_uid:

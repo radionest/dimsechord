@@ -2,11 +2,15 @@ import pytest
 from pydicom import Dataset
 from pynetdicom import AE
 from pynetdicom.sop_class import (  # type: ignore[attr-defined]
+    PatientRootQueryRetrieveInformationModelFind,
+    PatientRootQueryRetrieveInformationModelMove,
     StudyRootQueryRetrieveInformationModelFind,
+    StudyRootQueryRetrieveInformationModelMove,
     Verification,
 )
 
 from dimsechord._client import DicomClient
+from dimsechord._exceptions import AssociationError
 from dimsechord._models import AssociationConfig, DicomNode, ImageQuery, SeriesQuery, StudyQuery
 from dimsechord._scu import DicomOperations
 from tests.factories import make_instance
@@ -66,6 +70,15 @@ def test_query_dataset_pins_utf8_charset() -> None:
     ops = DicomOperations(calling_aet="X")
     ds = ops._build_study_query_dataset(StudyQuery(patient_name="ИВАНОВ"))
     assert ds.SpecificCharacterSet == "ISO_IR 192"
+
+
+def test_create_ae_requests_study_root_find_and_move_only() -> None:
+    ops = DicomOperations(calling_aet="TESTSCU")
+    ae = ops._create_ae()
+    assert {str(cx.abstract_syntax) for cx in ae.requested_contexts} == {
+        StudyRootQueryRetrieveInformationModelFind,
+        StudyRootQueryRetrieveInformationModelMove,
+    }
 
 
 @pytest.mark.timeout(30)
@@ -212,3 +225,119 @@ def test_scu_find_round_trips_single_image_type(free_port) -> None:
         assert images[0].image_type == ["ORIGINAL"]
     finally:
         pacs.stop()
+
+
+@pytest.mark.timeout(30)
+def test_find_series_uses_study_root_without_patient_id(fake_pacs, seeded_study) -> None:
+    ops = DicomOperations(calling_aet="TESTSCU")
+    ops.find_series(
+        _config(fake_pacs), SeriesQuery(study_instance_uid=seeded_study["study"][0])
+    )
+    assert fake_pacs.find_contexts[-1] == StudyRootQueryRetrieveInformationModelFind
+    assert "PatientID" not in fake_pacs.find_identifiers[-1]
+    assert fake_pacs.find_identifiers[-1].QueryRetrieveLevel == "SERIES"
+    assert fake_pacs.find_identifiers[-1].StudyInstanceUID == seeded_study["study"][0]
+
+
+@pytest.mark.timeout(30)
+def test_find_studies_carries_patient_id_as_study_level_key(fake_pacs) -> None:
+    ops = DicomOperations(calling_aet="TESTSCU")
+    ops.find_studies(_config(fake_pacs), StudyQuery())
+    assert fake_pacs.find_contexts[-1] == StudyRootQueryRetrieveInformationModelFind
+    assert "PatientID" in fake_pacs.find_identifiers[-1]
+
+
+@pytest.mark.timeout(30)
+def test_patient_root_only_peer_raises_association_error(free_port) -> None:
+    """Zero accepted contexts → pynetdicom aborts; the error names what was rejected."""
+    pacs = FakePacs(aet="PRONLY")
+    port = free_port()
+    pacs.start(
+        port,
+        qr_contexts=[
+            PatientRootQueryRetrieveInformationModelFind,
+            PatientRootQueryRetrieveInformationModelMove,
+        ],
+    )
+    try:
+        ops = DicomOperations(calling_aet="TESTSCU")
+        config = AssociationConfig(
+            calling_aet="TESTSCU", called_aet="PRONLY", peer_host="127.0.0.1", peer_port=port
+        )
+        with pytest.raises(AssociationError, match="Study Root"):
+            ops.find_studies(config, StudyQuery())
+    finally:
+        pacs.stop()
+
+
+@pytest.mark.timeout(30)
+def test_find_context_refused_raises_association_error(free_port) -> None:
+    """Peer accepts SR-MOVE but not SR-FIND → established assoc, wrapped ValueError."""
+    pacs = FakePacs(aet="MOVEONLY")
+    port = free_port()
+    pacs.start(port, qr_contexts=[StudyRootQueryRetrieveInformationModelMove])
+    try:
+        ops = DicomOperations(calling_aet="TESTSCU")
+        config = AssociationConfig(
+            calling_aet="TESTSCU", called_aet="MOVEONLY", peer_host="127.0.0.1", peer_port=port
+        )
+        with pytest.raises(AssociationError, match="Study Root C-FIND"):
+            ops.find_studies(config, StudyQuery())
+    finally:
+        pacs.stop()
+
+
+@pytest.mark.timeout(30)
+def test_find_series_context_refused_raises_association_error(free_port) -> None:
+    """Peer accepts SR-MOVE but not SR-FIND → find_series wraps the refusal too."""
+    pacs = FakePacs(aet="MOVEONLY2")
+    port = free_port()
+    pacs.start(port, qr_contexts=[StudyRootQueryRetrieveInformationModelMove])
+    try:
+        ops = DicomOperations(calling_aet="TESTSCU")
+        config = AssociationConfig(
+            calling_aet="TESTSCU", called_aet="MOVEONLY2", peer_host="127.0.0.1", peer_port=port
+        )
+        with pytest.raises(AssociationError, match="Study Root C-FIND"):
+            ops.find_series(config, SeriesQuery(study_instance_uid="1.2.3"))
+    finally:
+        pacs.stop()
+
+
+@pytest.mark.timeout(30)
+def test_find_images_context_refused_raises_association_error(free_port) -> None:
+    """Peer accepts SR-MOVE but not SR-FIND → find_images wraps the refusal too."""
+    pacs = FakePacs(aet="MOVEONLY3")
+    port = free_port()
+    pacs.start(port, qr_contexts=[StudyRootQueryRetrieveInformationModelMove])
+    try:
+        ops = DicomOperations(calling_aet="TESTSCU")
+        config = AssociationConfig(
+            calling_aet="TESTSCU", called_aet="MOVEONLY3", peer_host="127.0.0.1", peer_port=port
+        )
+        with pytest.raises(AssociationError, match="Study Root C-FIND"):
+            ops.find_images(
+                config, ImageQuery(study_instance_uid="1.2.3", series_instance_uid="1.2.3.4")
+            )
+    finally:
+        pacs.stop()
+
+
+@pytest.mark.timeout(30)
+def test_find_studies_lets_encode_failure_valueerror_propagate(monkeypatch, fake_pacs) -> None:
+    """An identifier-encoding ValueError is not a peer refusal — it must not be wrapped.
+
+    pynetdicom's send_c_find/send_c_move/send_c_get also raise ValueError when the
+    Identifier dataset fails to encode; that message never contains "presentation
+    context", so the guard must let it propagate unchanged rather than mislabeling
+    it as the peer refusing the Study Root context.
+    """
+    monkeypatch.setattr(
+        "pynetdicom.association.Association.send_c_find",
+        lambda _self, *_a, **_k: (_ for _ in ()).throw(
+            ValueError("Failed to encode the supplied Identifier dataset")
+        ),
+    )
+    ops = DicomOperations(calling_aet="TESTSCU")
+    with pytest.raises(ValueError, match="Failed to encode"):
+        ops.find_studies(_config(fake_pacs), StudyQuery())

@@ -221,6 +221,11 @@ async for ds in engine.stream_find(identifier, model=FIND):
     ...                                    # ds: raw pending-response Dataset
 ```
 
+The `model=` argument is the caller's choice: a Patient-Root-only peer is
+served by passing `PatientRootQueryRetrieveInformationModelFind` with a
+patient-rooted identifier — the typed face itself is Study Root only.
+(Queries only: the raw face has no retrieve counterpart.)
+
 Find leases (`per_aet_find_cap`, default 4) are a cap independent of move
 leases (`per_aet_cap`) on the same pool — `lease_find` neither blocks nor is
 blocked by `lease`/C-MOVE-to-self traffic, matching a PACS's tolerance for
@@ -359,7 +364,7 @@ except DimsechordError:
 
 | Exception | Raised when |
 | --- | --- |
-| `AssociationError` | an association fails, or a C-GET/C-STORE/C-MOVE sub-operation fails — including a C-MOVE or C-GET that ends on a non-success status, or a C-MOVE that under-delivers |
+| `AssociationError` | an association fails (including a peer that refuses a needed presentation context — the typed face requires Study Root Q/R), or a C-GET/C-STORE/C-MOVE sub-operation fails — including a C-MOVE or C-GET that ends on a non-success status, or a C-MOVE that under-delivers |
 | `FindFailedError` | a raw streaming C-FIND (`iter_find`/`stream_find`) ends with a non-success DIMSE status |
 | `PoolExhaustedError` | `AssociationPool.lease` — or `lease_find`, on the first iteration of `iter_find`/`stream_find` — times out with no free slot |
 | `MoveToSelfError` | a C-MOVE completes reporting zero sub-operations — the query matched nothing (under-delivery/misrouting is `AssociationError`) |

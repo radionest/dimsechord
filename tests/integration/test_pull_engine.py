@@ -123,16 +123,16 @@ def test_real_move_failure_raises_association_error(free_port, tmp_path) -> None
 def test_move_under_delivery_raises_association_error(monkeypatch, engine, seeded_study) -> None:
     """Issue #15 blocker: failed C-MOVE sub-operations must not be cached as complete.
 
-    Mirrors the C-GET transport guard: move_study() returning num_failed > 0
+    Mirrors the C-GET transport guard: move() returning num_failed > 0
     must end the stream with AssociationError, not a clean finish.
     """
     eng, cache = engine
     study, series = seeded_study["study"][0], seeded_study["series"][0]
 
-    def fake_move_study(self, config, request, destination_aet):  # noqa: ARG001
+    def fake_move(self, config, request, destination_aet):  # noqa: ARG001
         return RetrieveResult(status="success", num_completed=1, num_failed=1)
 
-    monkeypatch.setattr(DicomOperations, "move_study", fake_move_study)
+    monkeypatch.setattr(DicomOperations, "move", fake_move)
 
     with pytest.raises(AssociationError):
         list(eng.iter_series(study, series))
@@ -152,10 +152,10 @@ def test_move_nonsuccess_status_not_marked_complete(monkeypatch, engine, seeded_
     eng, cache = engine
     study, series = seeded_study["study"][0], seeded_study["series"][0]
 
-    def fake_move_study(self, config, request, destination_aet):  # noqa: ARG001
+    def fake_move(self, config, request, destination_aet):  # noqa: ARG001
         return RetrieveResult(status="pending", num_completed=1, num_failed=0)
 
-    monkeypatch.setattr(DicomOperations, "move_study", fake_move_study)
+    monkeypatch.setattr(DicomOperations, "move", fake_move)
 
     with pytest.raises(AssociationError):
         list(eng.iter_series(study, series))
@@ -168,7 +168,7 @@ def test_move_nonsuccess_status_not_marked_complete(monkeypatch, engine, seeded_
 def test_move_arrival_shortfall_not_marked_complete(monkeypatch, free_port, tmp_path) -> None:
     """Issue #15 blocker: status success but the instances never physically arrive.
 
-    move_study reports 2 completed sub-ops, yet no C-STORE reaches the SCP within
+    move reports 2 completed sub-ops, yet no C-STORE reaches the SCP within
     the completion grace. The shortfall must raise, not finish cleanly and certify
     a short series. Uses a dedicated engine with a small grace to stay fast.
     """
@@ -183,10 +183,10 @@ def test_move_arrival_shortfall_not_marked_complete(monkeypatch, free_port, tmp_
         cmove_timeout=5.0, arrival_timeout=5.0, completion_grace=0.5,
     )
 
-    def fake_move_study(self, config, request, destination_aet):  # noqa: ARG001
+    def fake_move(self, config, request, destination_aet):  # noqa: ARG001
         return RetrieveResult(status="success", num_completed=2, num_failed=0)
 
-    monkeypatch.setattr(DicomOperations, "move_study", fake_move_study)
+    monkeypatch.setattr(DicomOperations, "move", fake_move)
 
     study, series = "9.9.9.SHORT", "8.8.8.SHORT"
     try:
@@ -283,7 +283,7 @@ def test_orphaned_move_driver_not_certified_complete(monkeypatch, free_port, tmp
     """Issue #15 blocker: a driver still alive after the bounded join must raise.
 
     When the stream breaks on the end-of-stream sentinel (shutdown mid-pull) while the
-    C-MOVE driver thread is still stuck inside ``move_study``, the bounded
+    C-MOVE driver thread is still stuck inside ``move``, the bounded
     ``move_thread.join`` returns with the thread alive, ``move_error`` empty and a
     partial set delivered. That must raise ``AssociationError`` rather than finish
     cleanly and certify the partial delivery as a complete series.
@@ -301,11 +301,11 @@ def test_orphaned_move_driver_not_certified_complete(monkeypatch, free_port, tmp
 
     release = threading.Event()
 
-    def blocking_move_study(self, config, request, destination_aet):  # noqa: ARG001
+    def blocking_move(self, config, request, destination_aet):  # noqa: ARG001
         release.wait(timeout=20)  # driver hangs here → thread stays alive
         return RetrieveResult(status="success", num_completed=1, num_failed=0)
 
-    monkeypatch.setattr(DicomOperations, "move_study", blocking_move_study)
+    monkeypatch.setattr(DicomOperations, "move", blocking_move)
 
     study, series = "9.9.9.ORPHAN", "8.8.8.ORPHAN"
     scp_key = f"{study}/{series}"
