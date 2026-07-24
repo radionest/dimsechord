@@ -186,7 +186,10 @@ def matches_accepted_context(
     Mirrors pynetdicom's SCU context matching (3.0.4, association.py:473-497):
     exact transfer-syntax match; otherwise conversion is possible only between
     uncompressed syntaxes of the same endianness (explicit<->implicit,
-    deflated<->inflated); compressed syntaxes never convert.
+    deflated<->inflated); compressed syntaxes never convert. A private or
+    otherwise unregistered transfer syntax UID can only ever match exactly —
+    pydicom cannot reason about converting it, so it never falls back to the
+    conversion rules.
     """
     ts = UID(transfer_syntax)
     for cx in contexts:
@@ -195,9 +198,15 @@ def matches_accepted_context(
         cx_ts = UID(cx.transfer_syntax[0])
         if cx_ts == ts:
             return True
-        if ts.is_compressed or cx_ts.is_compressed:
-            continue
-        if ts.is_little_endian != cx_ts.is_little_endian:
+        try:
+            if ts.is_compressed or cx_ts.is_compressed:
+                continue
+            if ts.is_little_endian != cx_ts.is_little_endian:
+                continue
+        except ValueError:
+            # A private/unregistered transfer syntax raises from is_compressed
+            # / is_little_endian (pydicom can't reason about its encoding); an
+            # un-reasonable UID can only match exactly, handled above.
             continue
         return True
     return False

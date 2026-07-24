@@ -288,6 +288,29 @@ def test_store_raises_no_presentation_context_error_for_unaccepted_compressed_sy
 
 
 @pytest.mark.timeout(30)
+def test_store_raises_no_presentation_context_error_for_private_transfer_syntax(
+    ct_only_scp, seeded_study
+) -> None:
+    """A private/unregistered transfer syntax is a context miss, not a raw
+    ValueError escaping the pre-send check: pydicom's UID.is_compressed and
+    UID.is_little_endian raise ValueError for a UID that isn't a registered
+    transfer syntax, and that must not leak out of StoreSession.store."""
+    scp, peer = ct_only_scp
+    session = StoreSession(peer, calling_aet="SENDER")
+    try:
+        study = seeded_study["study"][0]
+        series = seeded_study["series"][0]
+        sop_uid = seeded_study[series][0]
+        ds = _make_ct_instance(study, series, sop_uid)
+        ds.file_meta.TransferSyntaxUID = "1.2.826.0.1.3680043.2.1143.1.2.3"
+        with pytest.raises(NoPresentationContextError):
+            session.store(ds)
+        assert scp.received == []
+    finally:
+        session.close()
+
+
+@pytest.mark.timeout(30)
 def test_store_after_context_miss_reuses_association(ct_only_scp, seeded_study) -> None:
     """A context miss does not poison the session; the next store reuses it."""
     scp, peer = ct_only_scp

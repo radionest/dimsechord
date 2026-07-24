@@ -21,6 +21,10 @@ JPEG_LS_LOSSLESS = "1.2.840.10008.1.2.4.80"
 _CT = "1.2.840.10008.5.1.4.1.1.2"
 _IMPLICIT, _EXPLICIT = "1.2.840.10008.1.2", "1.2.840.10008.1.2.1"
 _BIG_ENDIAN, _JPEG_LS = "1.2.840.10008.1.2.2", "1.2.840.10008.1.2.4.80"
+# Private root (not "1.2.840.10008.") and not a registered transfer syntax, so
+# pydicom's UID.is_transfer_syntax is False for it — is_compressed/
+# is_little_endian raise ValueError rather than returning a bool.
+_PRIVATE_TS = "1.2.826.0.1.3680043.2.1143.1.2.3"
 
 
 def test_default_tuple_sizes() -> None:
@@ -133,3 +137,18 @@ def test_matches_accepted_context(accepted_ts, dataset_ts, expected) -> None:
     cx = build_context(_CT, [accepted_ts])
     assert matches_accepted_context([cx], _CT, dataset_ts) is expected
     assert not matches_accepted_context([cx], "1.2.840.10008.5.1.4.1.1.4", _EXPLICIT)
+
+
+def test_matches_accepted_context_private_ts_is_not_a_match() -> None:
+    """A private/unregistered transfer syntax can't be reasoned about for
+    conversion (is_compressed/is_little_endian raise ValueError for it); the
+    matcher must treat that as a non-match instead of letting it propagate."""
+    cx = build_context(_CT, [_EXPLICIT])
+    assert matches_accepted_context([cx], _CT, _PRIVATE_TS) is False
+
+
+def test_matches_accepted_context_private_ts_matches_when_accepted_verbatim() -> None:
+    """A peer that accepted the private TS verbatim still matches: the exact
+    string-equality check runs before any conversion reasoning."""
+    cx = build_context(_CT, [_PRIVATE_TS])
+    assert matches_accepted_context([cx], _CT, _PRIVATE_TS) is True
