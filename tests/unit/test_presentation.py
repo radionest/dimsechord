@@ -11,6 +11,7 @@ from dimsechord._presentation import (
     DEFAULT_COMPRESSED_TRANSFER_SYNTAXES,
     DEFAULT_IMAGE_STORAGE_CLASSES,
     DEFAULT_OTHER_STORAGE_CLASSES,
+    build_storage_scp_contexts,
     build_storage_scu_contexts,
     matches_accepted_context,
 )
@@ -86,6 +87,35 @@ def test_max_contexts_reserve_for_cget() -> None:
     # …and a tighter budget rejects them.
     with pytest.raises(ValueError, match="105"):
         build_storage_scu_contexts(max_contexts=105)
+
+
+def test_scp_contexts_image_classes_accept_compressed() -> None:
+    by_class = {c.abstract_syntax: c for c in build_storage_scp_contexts()}
+    assert len(by_class) == len(DEFAULT_IMAGE_STORAGE_CLASSES) + len(DEFAULT_OTHER_STORAGE_CLASSES)
+    for cls in DEFAULT_IMAGE_STORAGE_CLASSES:
+        ts = set(by_class[cls].transfer_syntax)
+        assert set(DEFAULT_COMPRESSED_TRANSFER_SYNTAXES) <= ts
+        assert set(DEFAULT_TRANSFER_SYNTAXES) <= ts
+
+
+def test_scp_contexts_other_classes_uncompressed_only() -> None:
+    by_class = {c.abstract_syntax: c for c in build_storage_scp_contexts()}
+    for cls in DEFAULT_OTHER_STORAGE_CLASSES:
+        assert set(by_class[cls].transfer_syntax) == set(DEFAULT_TRANSFER_SYNTAXES)
+
+
+def test_scp_accept_set_is_subset_of_scu_propose_set() -> None:
+    scu_pairs = {
+        (c.abstract_syntax, ts)
+        for c in build_storage_scu_contexts()
+        for ts in c.transfer_syntax
+    }
+    scp_pairs = {
+        (c.abstract_syntax, ts)
+        for c in build_storage_scp_contexts()
+        for ts in c.transfer_syntax
+    }
+    assert scp_pairs <= scu_pairs
 
 
 @pytest.mark.parametrize(

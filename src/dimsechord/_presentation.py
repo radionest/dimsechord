@@ -150,6 +150,32 @@ def build_storage_scu_contexts(
     return contexts
 
 
+def build_storage_scp_contexts(
+    image_classes: Sequence[str] = DEFAULT_IMAGE_STORAGE_CLASSES,
+    compressed_syntaxes: Sequence[str] = DEFAULT_COMPRESSED_TRANSFER_SYNTAXES,
+    other_classes: Sequence[str] = DEFAULT_OTHER_STORAGE_CLASSES,
+) -> list[PresentationContext]:
+    """Supported (acceptor-side) storage contexts from the shared matrix.
+
+    Mirror of ``build_storage_scu_contexts``: for identical arguments, every
+    (SOP class, transfer syntax) pair these contexts accept is proposable by
+    the SCU set — an instance a relay SCP accepts is always negotiable
+    upstream. Supported contexts are a matching table, never proposed, so
+    there is no 128-context limit here. Intended use::
+
+        for cx in build_storage_scp_contexts():
+            ae.add_supported_context(cx.abstract_syntax, cx.transfer_syntax)
+    """
+    contexts: list[PresentationContext] = []
+    for cls in image_classes:
+        contexts.append(
+            build_context(cls, [*DEFAULT_TRANSFER_SYNTAXES, *compressed_syntaxes])
+        )
+    for cls in other_classes:
+        contexts.append(build_context(cls, DEFAULT_TRANSFER_SYNTAXES))
+    return contexts
+
+
 def matches_accepted_context(
     contexts: Sequence[PresentationContext],
     sop_class_uid: str,
