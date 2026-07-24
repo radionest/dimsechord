@@ -3,12 +3,13 @@
 from __future__ import annotations
 
 import logging
+from copy import deepcopy
 from typing import TYPE_CHECKING
 
 from pynetdicom import AE
 
-from dimsechord._exceptions import AssociationError
-from dimsechord._presentation import build_storage_scu_contexts
+from dimsechord._exceptions import AssociationError, NoPresentationContextError
+from dimsechord._presentation import build_storage_scu_contexts, matches_accepted_context
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -32,6 +33,13 @@ class StoreSession:
     only when it is provably dead BEFORE sending, so no instance can ever be
     duplicated silently. ``close`` releases the association and is idempotent;
     a later ``store`` simply reopens.
+
+    A per-instance presentation-context miss raises ``NoPresentationContextError``
+    (a ``DimsechordError``, NOT an ``AssociationError``) without sending anything,
+    leaving the association open and usable for the next ``store``. A residual
+    ``ValueError`` from ``send_c_store`` after that pre-check is a
+    dataset-encoding failure — it propagates as-is and the association stays
+    intact.
 
     Sessions are cheap and single-threaded: one session is used by one thread
     at a time (no internal locking) — create one per inbound association.
@@ -59,8 +67,14 @@ class StoreSession:
         self._assoc: Association | None = None
 
     def store(self, dataset: Dataset) -> int:
+        sop_class = str(dataset.SOPClassUID)
+        transfer_syntax = str(dataset.file_meta.TransferSyntaxUID)
         assoc = self._ensure_association()
-        status = assoc.send_c_store(dataset)
+        if not matches_accepted_context(assoc.accepted_contexts, sop_class, transfer_syntax):
+            raise NoPresentationContextError(sop_class, transfer_syntax)
+        # send_c_store's encoder resolves ambiguous VRs (e.g. PixelData) in
+        # place; send a copy so the caller's Dataset is never mutated (D10).
+        status = assoc.send_c_store(deepcopy(dataset))
         if not status:
             self._discard()
             raise AssociationError(
