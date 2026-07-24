@@ -72,6 +72,15 @@ def test_query_dataset_pins_utf8_charset() -> None:
     assert ds.SpecificCharacterSet == "ISO_IR 192"
 
 
+def test_create_ae_requests_study_root_find_and_move_only() -> None:
+    ops = DicomOperations(calling_aet="TESTSCU")
+    ae = ops._create_ae()
+    assert {str(cx.abstract_syntax) for cx in ae.requested_contexts} == {
+        StudyRootQueryRetrieveInformationModelFind,
+        StudyRootQueryRetrieveInformationModelMove,
+    }
+
+
 @pytest.mark.timeout(30)
 @pytest.mark.asyncio
 async def test_async_client_find_studies(fake_pacs, seeded_study) -> None:
@@ -226,12 +235,12 @@ def test_find_series_uses_study_root_without_patient_id(fake_pacs, seeded_study)
     )
     assert fake_pacs.find_contexts[-1] == StudyRootQueryRetrieveInformationModelFind
     assert "PatientID" not in fake_pacs.find_identifiers[-1]
+    assert fake_pacs.find_identifiers[-1].QueryRetrieveLevel == "SERIES"
+    assert fake_pacs.find_identifiers[-1].StudyInstanceUID == seeded_study["study"][0]
 
 
 @pytest.mark.timeout(30)
-def test_find_studies_carries_patient_id_as_study_level_key(
-    fake_pacs, seeded_study  # noqa: ARG001
-) -> None:
+def test_find_studies_carries_patient_id_as_study_level_key(fake_pacs) -> None:
     ops = DicomOperations(calling_aet="TESTSCU")
     ops.find_studies(_config(fake_pacs), StudyQuery())
     assert fake_pacs.find_contexts[-1] == StudyRootQueryRetrieveInformationModelFind

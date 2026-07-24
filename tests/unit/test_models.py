@@ -153,4 +153,6 @@ def test_query_retrieve_level_has_no_patient_member() -> None:
 
 
 def test_retrieve_request_has_no_patient_id_field() -> None:
-    assert "patient_id" not in {f.name for f in fields(RetrieveRequest)}
+    assert {f.name for f in fields(RetrieveRequest)} == {
+        "level", "study_instance_uid", "series_instance_uid", "sop_instance_uid",
+    }
