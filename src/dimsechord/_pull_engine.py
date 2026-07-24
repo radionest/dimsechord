@@ -136,7 +136,7 @@ class _MoveToSelfTransport:
                 # destination); a shared SCU with a fixed calling AET would mismatch
                 # the leased AET when the pool holds N > 1 identities.
                 ops = DicomOperations(calling_aet=aet, max_pdu=self._max_pdu)
-                result = ops.move_study(config, request, destination_aet=aet)
+                result = ops.move(config, request, destination_aet=aet)
                 if result.num_failed:
                     raise AssociationError(
                         f"C-MOVE incomplete: {result.num_failed} sub-operation(s) failed "

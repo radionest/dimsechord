@@ -1,9 +1,11 @@
 # Changelog
 
-## 0.7.0 — 2026-07-24
+## 0.7.0 — Unreleased
 
-`StoreSession` adds a persistent C-STORE SCU session with verbatim DIMSE
-status pass-through.
+The typed Q/R face now speaks the Study Root information model exclusively
+(issue #22): every identifier is hierarchically complete by construction. A
+new `StoreSession` adds a persistent C-STORE SCU write path with verbatim
+DIMSE status pass-through.
 
 ### Added
 
@@ -22,6 +24,32 @@ status pass-through.
   `build_storage_scu_contexts()`, built from the same storage-class ×
   transfer-syntax matrix: every instance a `StoreSession` can propose
   upstream is accepted by an SCP built from it.
+
+### Changed
+
+- **Breaking:** all typed C-FIND/C-MOVE/C-GET operations use the Study Root
+  information model. Previously they used Patient Root with an incomplete
+  key hierarchy (no `PatientID` above the STUDY level), which at least one
+  field SCP answered by silently widening a series query to the whole
+  study. Patient-Root-only peers now fail with a clear `AssociationError`;
+  for queries, the raw pass-through face (`QueryEngine` / `find_iter`)
+  remains their supported path — there is no raw retrieve face, so
+  C-MOVE/C-GET against such peers is no longer possible.
+- **Breaking:** the `patient_id` parameter is removed from
+  `DicomClient.move_study`, `move_series`, `get_study`, `get_series`,
+  `get_study_to_memory`, and `get_series_to_memory` — a Study Root
+  retrieve identifier carries only the Q/R level and unique keys. The
+  optional parameters of these methods (`timeout`, `on_progress`) are now
+  keyword-only, so a legacy positional `patient_id` argument fails with
+  `TypeError` instead of silently binding to the parameter that took its
+  position.
+- **Breaking:** `QueryRetrieveLevel.PATIENT` is removed; the enum now
+  lists exactly the levels the library operates at
+  (`STUDY`/`SERIES`/`IMAGE`).
+- A peer that refuses a needed Study Root presentation context raises
+  `AssociationError` naming the model instead of a bare pynetdicom
+  `ValueError`; an association where the peer accepts none of the
+  requested contexts reports which contexts were rejected.
 
 ## 0.6.0 — 2026-07-13
 

@@ -31,11 +31,23 @@ DICOM file parsing. This file is a glossary — for the deeper "why", see
 
 ## Query/Retrieve levels
 
-`QueryRetrieveLevel` (`_models.py`) is one of `PATIENT`, `STUDY`, `SERIES`,
-`IMAGE` — the granularity a C-FIND/C-MOVE operates at. Only `STUDY`,
-`SERIES`, and `IMAGE` have dedicated query dataclasses in this package
-(`StudyQuery`/`SeriesQuery`/`ImageQuery`); `PATIENT` is defined on the enum
-but has no query builder here.
+`QueryRetrieveLevel` (`_models.py`) is one of `STUDY`, `SERIES`, `IMAGE` —
+the granularity a C-FIND/C-MOVE operates at, each with a dedicated query
+dataclass (`StudyQuery`/`SeriesQuery`/`ImageQuery`). DICOM also defines a
+PATIENT level; the typed face deliberately has none.
+
+## Information model
+
+The typed face (`DicomClient`, the typed `DicomOperations` operations,
+`PullEngine`) speaks the **Study Root** Q/R information model exclusively,
+because its query types already encode that hierarchy: `study_instance_uid`
+is required at series/image level and patient attributes are study-level
+matching keys, so every identifier is hierarchically complete by
+construction. No Patient Root context is requested. Anything else —
+Patient Root, relational
+queries, peer-specific identifier shapes — is the raw pass-through face's
+job (`find_iter` / `QueryEngine`), where the caller owns the identifier
+and the model.
 
 ## The "move-to-self" pattern
 

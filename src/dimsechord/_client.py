@@ -113,15 +113,13 @@ class DicomClient:
         study_uid: str,
         peer: DicomNode,
         destination_aet: str,
-        patient_id: str | None = None,
+        *,
         timeout: float = 300.0,
     ) -> RetrieveResult:
         config = self._create_association_config(peer.aet, peer.host, peer.port, timeout)
-        request = RetrieveRequest(
-            level=QueryRetrieveLevel.STUDY, study_instance_uid=study_uid, patient_id=patient_id
-        )
+        request = RetrieveRequest(level=QueryRetrieveLevel.STUDY, study_instance_uid=study_uid)
         return await asyncio.to_thread(
-            self._operations.move_study, config, request, destination_aet
+            self._operations.move, config, request, destination_aet
         )
 
     async def move_series(
@@ -130,7 +128,7 @@ class DicomClient:
         series_uid: str,
         peer: DicomNode,
         destination_aet: str,
-        patient_id: str | None = None,
+        *,
         timeout: float = 300.0,
     ) -> RetrieveResult:
         config = self._create_association_config(peer.aet, peer.host, peer.port, timeout)
@@ -138,10 +136,9 @@ class DicomClient:
             level=QueryRetrieveLevel.SERIES,
             study_instance_uid=study_uid,
             series_instance_uid=series_uid,
-            patient_id=patient_id,
         )
         return await asyncio.to_thread(
-            self._operations.move_study, config, request, destination_aet
+            self._operations.move, config, request, destination_aet
         )
 
     async def _retrieve_via_get(
@@ -153,7 +150,6 @@ class DicomClient:
         series_uid: str | None,
         peer: DicomNode,
         output_dir: Path | None,
-        patient_id: str | None,
         timeout: float,
         on_progress: Callable[[int, int | None], None] | None = None,
     ) -> RetrieveResult:
@@ -162,7 +158,6 @@ class DicomClient:
             level=level,
             study_instance_uid=study_uid,
             series_instance_uid=series_uid,
-            patient_id=patient_id,
         )
         storage = StorageConfig(mode=mode, output_dir=output_dir)
         return await asyncio.to_thread(
@@ -174,7 +169,7 @@ class DicomClient:
         study_uid: str,
         peer: DicomNode,
         output_dir: Path,
-        patient_id: str | None = None,
+        *,
         timeout: float = 300.0,
     ) -> RetrieveResult:
         return await self._retrieve_via_get(
@@ -184,7 +179,6 @@ class DicomClient:
             series_uid=None,
             peer=peer,
             output_dir=output_dir,
-            patient_id=patient_id,
             timeout=timeout,
         )
 
@@ -194,7 +188,7 @@ class DicomClient:
         series_uid: str,
         peer: DicomNode,
         output_dir: Path,
-        patient_id: str | None = None,
+        *,
         timeout: float = 300.0,
     ) -> RetrieveResult:
         return await self._retrieve_via_get(
@@ -204,7 +198,6 @@ class DicomClient:
             series_uid=series_uid,
             peer=peer,
             output_dir=output_dir,
-            patient_id=patient_id,
             timeout=timeout,
         )
 
@@ -212,7 +205,7 @@ class DicomClient:
         self,
         study_uid: str,
         peer: DicomNode,
-        patient_id: str | None = None,
+        *,
         timeout: float = 300.0,
         on_progress: Callable[[int, int | None], None] | None = None,
     ) -> RetrieveResult:
@@ -223,7 +216,6 @@ class DicomClient:
             series_uid=None,
             peer=peer,
             output_dir=None,
-            patient_id=patient_id,
             timeout=timeout,
             on_progress=on_progress,
         )
@@ -233,7 +225,7 @@ class DicomClient:
         study_uid: str,
         series_uid: str,
         peer: DicomNode,
-        patient_id: str | None = None,
+        *,
         timeout: float = 300.0,
     ) -> RetrieveResult:
         return await self._retrieve_via_get(
@@ -243,6 +235,5 @@ class DicomClient:
             series_uid=series_uid,
             peer=peer,
             output_dir=None,
-            patient_id=patient_id,
             timeout=timeout,
         )

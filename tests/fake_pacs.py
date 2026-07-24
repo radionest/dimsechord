@@ -38,6 +38,11 @@ class FakePacs:
         self.moves: list[tuple[str, int]] = []
         self.find_identifiers: list[Dataset] = []
         self.find_calling_aets: list[str] = []
+        self.find_contexts: list[str] = []
+        self.move_contexts: list[str] = []
+        self.get_contexts: list[str] = []
+        self.move_identifiers: list[Dataset] = []
+        self.get_identifiers: list[Dataset] = []
         self.find_response_delay: float = 0.0
         self.fail_find_with: int | None = None
         self.active_associations = 0
@@ -52,16 +57,26 @@ class FakePacs:
         self._destinations[aet] = (host, port)
 
     # ── lifecycle ────────────────────────────────────────────────
-    def start(self, port: int, require_calling_aets: list[str] | None = None) -> None:
+    def start(
+        self,
+        port: int,
+        require_calling_aets: list[str] | None = None,
+        qr_contexts: list[str] | None = None,
+    ) -> None:
         ae = AE(ae_title=self.aet)
         if require_calling_aets is not None:
             ae.require_calling_aet = list(require_calling_aets)
-        ae.add_supported_context(PatientRootQueryRetrieveInformationModelFind)
-        ae.add_supported_context(StudyRootQueryRetrieveInformationModelFind)
-        ae.add_supported_context(PatientRootQueryRetrieveInformationModelMove)
-        ae.add_supported_context(StudyRootQueryRetrieveInformationModelMove)
-        ae.add_supported_context(PatientRootQueryRetrieveInformationModelGet)
-        ae.add_supported_context(StudyRootQueryRetrieveInformationModelGet)
+        if qr_contexts is None:
+            qr_contexts = [
+                PatientRootQueryRetrieveInformationModelFind,
+                StudyRootQueryRetrieveInformationModelFind,
+                PatientRootQueryRetrieveInformationModelMove,
+                StudyRootQueryRetrieveInformationModelMove,
+                PatientRootQueryRetrieveInformationModelGet,
+                StudyRootQueryRetrieveInformationModelGet,
+            ]
+        for qr_cx in qr_contexts:
+            ae.add_supported_context(qr_cx)
         ae.add_supported_context(Verification)
         # C-MOVE sends C-STORE to a separate destination (requested context); C-GET
         # sends C-STORE back over the SAME association, so the storage contexts must
@@ -121,6 +136,7 @@ class FakePacs:
 
     def _on_find(self, event: evt.Event) -> Iterator[tuple[int, Dataset | None]]:
         identifier = event.identifier
+        self.find_contexts.append(str(event.context.abstract_syntax))
         level = str(getattr(identifier, "QueryRetrieveLevel", "STUDY"))
         calling = event.assoc.requestor.ae_title
         if hasattr(calling, "decode"):
@@ -210,6 +226,8 @@ class FakePacs:
     def _on_move(
         self, event: evt.Event
     ) -> Iterator[tuple[str | None, int] | int | tuple[int, Dataset | None]]:
+        self.move_contexts.append(str(event.context.abstract_syntax))
+        self.move_identifiers.append(event.identifier)
         dest_raw = event.move_destination
         dest_aet = (
             dest_raw.decode().strip() if isinstance(dest_raw, bytes) else str(dest_raw).strip()
@@ -228,6 +246,8 @@ class FakePacs:
     def _on_get(
         self, event: evt.Event
     ) -> Iterator[int | tuple[int, Dataset | None]]:
+        self.get_contexts.append(str(event.context.abstract_syntax))
+        self.get_identifiers.append(event.identifier)
         matches = self._match(event.identifier)
         yield len(matches)  # 1st yield: number of C-STORE sub-operations
         for ds in matches:
