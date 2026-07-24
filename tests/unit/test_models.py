@@ -1,3 +1,4 @@
+from dataclasses import fields
 from pathlib import Path
 
 from dimsechord._models import (
@@ -145,3 +146,11 @@ def test_image_result_extended_fields_keyword_construction() -> None:
     )
     assert r.image_type == ["ORIGINAL", "PRIMARY"]
     assert r.slice_thickness == 2.5
+
+
+def test_query_retrieve_level_has_no_patient_member() -> None:
+    assert [m.name for m in QueryRetrieveLevel] == ["STUDY", "SERIES", "IMAGE"]
+
+
+def test_retrieve_request_has_no_patient_id_field() -> None:
+    assert "patient_id" not in {f.name for f in fields(RetrieveRequest)}
