@@ -6,6 +6,7 @@ from copy import deepcopy
 import pytest
 from pydicom.uid import ExplicitVRLittleEndian, ImplicitVRLittleEndian, JPEGLSLossless
 from pynetdicom import AE
+from pynetdicom.association import Association
 from pynetdicom.presentation import build_context
 from pynetdicom.sop_class import CTImageStorage  # type: ignore[attr-defined]
 
@@ -413,5 +414,79 @@ def test_store_raises_on_mid_store_abort_and_does_not_resend(
         assert session.store(make_instance(study, series, sop_uid_2)) == 0x0000
         assert scp.associations == 2
         assert sum(1 for uid, _ts in scp.received if uid == sop_uid_1) == 1
+    finally:
+        session.close()
+
+
+# ── StoreSession: reconnect RuntimeError branch (fault injection) ──────────
+#
+# send_c_store's own entry guard (`if not self.is_established: raise
+# RuntimeError(...)`) fires only in the microsecond TOCTOU window between
+# _ensure_association()'s liveness check and the send itself. No black-box
+# integration scenario can land deterministically in that window, so these
+# two tests patch pynetdicom.association.Association.send_c_store directly
+# to simulate it. Patching is done at the CLASS level (not on one instance)
+# because each attempt in store()'s retry loop opens a fresh Association.
+
+
+@pytest.mark.timeout(30)
+def test_reconnect_retries_once_on_runtime_error_then_succeeds(
+    monkeypatch, scripted_scp, seeded_study
+) -> None:
+    """First send_c_store call raises RuntimeError before anything is sent;
+    store() discards, reopens, and the retry succeeds — the instance reaches
+    the peer exactly once, never duplicated."""
+    scp, peer = scripted_scp
+    original = Association.send_c_store
+    calls = {"n": 0}
+
+    def flaky(self, *args, **kwargs):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            raise RuntimeError("association not established")
+        return original(self, *args, **kwargs)
+
+    monkeypatch.setattr(Association, "send_c_store", flaky)
+
+    session = StoreSession(peer, calling_aet="SENDER")
+    try:
+        study = seeded_study["study"][0]
+        series = seeded_study["series"][0]
+        sop_uid = seeded_study[series][0]
+        ds = make_instance(study, series, sop_uid)
+        assert session.store(ds) == 0x0000
+        assert scp.received == [(sop_uid, str(ImplicitVRLittleEndian))]
+        assert scp.associations == 2
+        assert calls["n"] == 2
+    finally:
+        session.close()
+
+
+@pytest.mark.timeout(30)
+def test_reconnect_raises_association_error_after_repeated_runtime_errors(
+    monkeypatch, scripted_scp, seeded_study
+) -> None:
+    """Every send_c_store call raises RuntimeError: store() retries once,
+    then gives up and raises AssociationError instead of looping forever —
+    and nothing is ever sent to the peer."""
+    scp, peer = scripted_scp
+    calls = {"n": 0}
+
+    def always_raises(self, *args, **kwargs):  # noqa: ARG001
+        calls["n"] += 1
+        raise RuntimeError("association not established")
+
+    monkeypatch.setattr(Association, "send_c_store", always_raises)
+
+    session = StoreSession(peer, calling_aet="SENDER")
+    try:
+        study = seeded_study["study"][0]
+        series = seeded_study["series"][0]
+        sop_uid = seeded_study[series][0]
+        ds = make_instance(study, series, sop_uid)
+        with pytest.raises(AssociationError):
+            session.store(ds)
+        assert calls["n"] == 2
+        assert scp.received == []
     finally:
         session.close()
