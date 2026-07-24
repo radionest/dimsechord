@@ -36,10 +36,11 @@ class StoreSession:
 
     A per-instance presentation-context miss raises ``NoPresentationContextError``
     (a ``DimsechordError``, NOT an ``AssociationError``) without sending anything,
-    leaving the association open and usable for the next ``store``. A residual
-    ``ValueError`` from ``send_c_store`` after that pre-check is a
-    dataset-encoding failure — it propagates as-is and the association stays
-    intact.
+    leaving the association open and usable for the next ``store``. An exception
+    from ``send_c_store`` after that pre-check signals a malformed or inconsistent
+    dataset — a ``ValueError`` from encoding coercion, or an ``AttributeError``
+    (e.g. a missing ``SOPInstanceUID``) — and propagates as-is; the association
+    stays intact.
 
     Sessions are cheap and single-threaded: one session is used by one thread
     at a time (no internal locking) — create one per inbound association.

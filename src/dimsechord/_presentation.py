@@ -189,7 +189,10 @@ def matches_accepted_context(
     deflated<->inflated); compressed syntaxes never convert. A private or
     otherwise unregistered transfer syntax UID can only ever match exactly —
     pydicom cannot reason about converting it, so it never falls back to the
-    conversion rules.
+    conversion rules. It replicates only pynetdicom's transfer-syntax rules,
+    not its ``as_scu`` role filter (association.py:468) — callers pass SCU-role
+    accepted contexts (``assoc.accepted_contexts`` on an SCU association), for
+    which that filter is a no-op.
     """
     ts = UID(transfer_syntax)
     for cx in contexts:
