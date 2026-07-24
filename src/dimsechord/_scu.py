@@ -442,7 +442,7 @@ class DicomOperations:
 
         with self._association(ae, config) as assoc:
             results: list[StudyResult] = []
-            responses = assoc.send_c_find(ds, PatientRootQueryRetrieveInformationModelFind)
+            responses = assoc.send_c_find(ds, StudyRootQueryRetrieveInformationModelFind)
 
             for status, identifier in responses:
                 if not status:
@@ -479,7 +479,7 @@ class DicomOperations:
 
         with self._association(ae, config) as assoc:
             results: list[SeriesResult] = []
-            responses = assoc.send_c_find(ds, PatientRootQueryRetrieveInformationModelFind)
+            responses = assoc.send_c_find(ds, StudyRootQueryRetrieveInformationModelFind)
 
             for status, identifier in responses:
                 if not status:
@@ -513,7 +513,7 @@ class DicomOperations:
 
         with self._association(ae, config) as assoc:
             results: list[ImageResult] = []
-            responses = assoc.send_c_find(ds, PatientRootQueryRetrieveInformationModelFind)
+            responses = assoc.send_c_find(ds, StudyRootQueryRetrieveInformationModelFind)
 
             for status, identifier in responses:
                 if not status:

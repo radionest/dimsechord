@@ -212,3 +212,23 @@ def test_scu_find_round_trips_single_image_type(free_port) -> None:
         assert images[0].image_type == ["ORIGINAL"]
     finally:
         pacs.stop()
+
+
+@pytest.mark.timeout(30)
+def test_find_series_uses_study_root_without_patient_id(fake_pacs, seeded_study) -> None:
+    ops = DicomOperations(calling_aet="TESTSCU")
+    ops.find_series(
+        _config(fake_pacs), SeriesQuery(study_instance_uid=seeded_study["study"][0])
+    )
+    assert fake_pacs.find_contexts[-1] == StudyRootQueryRetrieveInformationModelFind
+    assert "PatientID" not in fake_pacs.find_identifiers[-1]
+
+
+@pytest.mark.timeout(30)
+def test_find_studies_carries_patient_id_as_study_level_key(
+    fake_pacs, seeded_study  # noqa: ARG001
+) -> None:
+    ops = DicomOperations(calling_aet="TESTSCU")
+    ops.find_studies(_config(fake_pacs), StudyQuery())
+    assert fake_pacs.find_contexts[-1] == StudyRootQueryRetrieveInformationModelFind
+    assert "PatientID" in fake_pacs.find_identifiers[-1]
