@@ -224,6 +224,7 @@ async for ds in engine.stream_find(identifier, model=FIND):
 The `model=` argument is the caller's choice: a Patient-Root-only peer is
 served by passing `PatientRootQueryRetrieveInformationModelFind` with a
 patient-rooted identifier — the typed face itself is Study Root only.
+(Queries only: the raw face has no retrieve counterpart.)
 
 Find leases (`per_aet_find_cap`, default 4) are a cap independent of move
 leases (`per_aet_cap`) on the same pool — `lease_find` neither blocks nor is

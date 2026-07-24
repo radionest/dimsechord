@@ -38,12 +38,13 @@ PATIENT level; the typed face deliberately has none.
 
 ## Information model
 
-The typed face (`DicomClient`, `DicomOperations`, `PullEngine`) speaks the
-**Study Root** Q/R information model exclusively, because its query types
-already encode that hierarchy: `study_instance_uid` is required at
-series/image level and patient attributes are study-level matching keys,
-so every identifier is hierarchically complete by construction. No Patient
-Root context is requested. Anything else — Patient Root, relational
+The typed face (`DicomClient`, the typed `DicomOperations` operations,
+`PullEngine`) speaks the **Study Root** Q/R information model exclusively,
+because its query types already encode that hierarchy: `study_instance_uid`
+is required at series/image level and patient attributes are study-level
+matching keys, so every identifier is hierarchically complete by
+construction. No Patient Root context is requested. Anything else —
+Patient Root, relational
 queries, peer-specific identifier shapes — is the raw pass-through face's
 job (`find_iter` / `QueryEngine`), where the caller owns the identifier
 and the model.
