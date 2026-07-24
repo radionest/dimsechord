@@ -285,3 +285,59 @@ def test_find_context_refused_raises_association_error(free_port) -> None:
             ops.find_studies(config, StudyQuery())
     finally:
         pacs.stop()
+
+
+@pytest.mark.timeout(30)
+def test_find_series_context_refused_raises_association_error(free_port) -> None:
+    """Peer accepts SR-MOVE but not SR-FIND → find_series wraps the refusal too."""
+    pacs = FakePacs(aet="MOVEONLY2")
+    port = free_port()
+    pacs.start(port, qr_contexts=[StudyRootQueryRetrieveInformationModelMove])
+    try:
+        ops = DicomOperations(calling_aet="TESTSCU")
+        config = AssociationConfig(
+            calling_aet="TESTSCU", called_aet="MOVEONLY2", peer_host="127.0.0.1", peer_port=port
+        )
+        with pytest.raises(AssociationError, match="Study Root C-FIND"):
+            ops.find_series(config, SeriesQuery(study_instance_uid="1.2.3"))
+    finally:
+        pacs.stop()
+
+
+@pytest.mark.timeout(30)
+def test_find_images_context_refused_raises_association_error(free_port) -> None:
+    """Peer accepts SR-MOVE but not SR-FIND → find_images wraps the refusal too."""
+    pacs = FakePacs(aet="MOVEONLY3")
+    port = free_port()
+    pacs.start(port, qr_contexts=[StudyRootQueryRetrieveInformationModelMove])
+    try:
+        ops = DicomOperations(calling_aet="TESTSCU")
+        config = AssociationConfig(
+            calling_aet="TESTSCU", called_aet="MOVEONLY3", peer_host="127.0.0.1", peer_port=port
+        )
+        with pytest.raises(AssociationError, match="Study Root C-FIND"):
+            ops.find_images(
+                config, ImageQuery(study_instance_uid="1.2.3", series_instance_uid="1.2.3.4")
+            )
+    finally:
+        pacs.stop()
+
+
+@pytest.mark.timeout(30)
+def test_find_studies_lets_encode_failure_valueerror_propagate(monkeypatch, fake_pacs) -> None:
+    """An identifier-encoding ValueError is not a peer refusal — it must not be wrapped.
+
+    pynetdicom's send_c_find/send_c_move/send_c_get also raise ValueError when the
+    Identifier dataset fails to encode; that message never contains "presentation
+    context", so the guard must let it propagate unchanged rather than mislabeling
+    it as the peer refusing the Study Root context.
+    """
+    monkeypatch.setattr(
+        "pynetdicom.association.Association.send_c_find",
+        lambda _self, *_a, **_k: (_ for _ in ()).throw(
+            ValueError("Failed to encode the supplied Identifier dataset")
+        ),
+    )
+    ops = DicomOperations(calling_aet="TESTSCU")
+    with pytest.raises(ValueError, match="Failed to encode"):
+        ops.find_studies(_config(fake_pacs), StudyQuery())

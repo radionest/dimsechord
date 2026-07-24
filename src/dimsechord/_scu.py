@@ -298,9 +298,11 @@ class DicomOperations:
                 ]
                 logger.error(f"Failed to establish association with {config.called_aet}")
                 if rejected and not assoc.accepted_contexts:
+                    shown = ", ".join(rejected[:8])
+                    if len(rejected) > 8:
+                        shown += f", … ({len(rejected) - 8} more)"
                     raise AssociationError(
-                        "Peer accepted none of the requested presentation contexts: "
-                        + ", ".join(rejected)
+                        "Peer accepted none of the requested presentation contexts: " + shown
                     )
                 raise AssociationError("Failed to establish DICOM association")
             try:
@@ -450,6 +452,8 @@ class DicomOperations:
             try:
                 responses = assoc.send_c_find(ds, StudyRootQueryRetrieveInformationModelFind)
             except ValueError as e:
+                if "presentation context" not in str(e):
+                    raise
                 raise AssociationError(
                     f"Peer did not accept the Study Root C-FIND presentation context: {e}"
                 ) from e
@@ -492,6 +496,8 @@ class DicomOperations:
             try:
                 responses = assoc.send_c_find(ds, StudyRootQueryRetrieveInformationModelFind)
             except ValueError as e:
+                if "presentation context" not in str(e):
+                    raise
                 raise AssociationError(
                     f"Peer did not accept the Study Root C-FIND presentation context: {e}"
                 ) from e
@@ -531,6 +537,8 @@ class DicomOperations:
             try:
                 responses = assoc.send_c_find(ds, StudyRootQueryRetrieveInformationModelFind)
             except ValueError as e:
+                if "presentation context" not in str(e):
+                    raise
                 raise AssociationError(
                     f"Peer did not accept the Study Root C-FIND presentation context: {e}"
                 ) from e
@@ -597,7 +605,7 @@ class DicomOperations:
     def move(
         self, config: AssociationConfig, request: RetrieveRequest, destination_aet: str
     ) -> RetrieveResult:
-        """Execute C-MOVE to move a study or series to another node.
+        """Execute C-MOVE to move a study, series, or image to another node.
 
         Args:
             config: Association configuration
@@ -608,7 +616,8 @@ class DicomOperations:
             Retrieve result
 
         Raises:
-            AssociationError: If association fails
+            AssociationError: If association fails or the peer refuses the Study Root
+                C-MOVE presentation context.
         """
         ae = self._create_ae()
         ds = self._build_retrieve_dataset(request)
@@ -620,6 +629,8 @@ class DicomOperations:
                     ds, destination_aet, StudyRootQueryRetrieveInformationModelMove
                 )
             except ValueError as e:
+                if "presentation context" not in str(e):
+                    raise
                 raise AssociationError(
                     f"Peer did not accept the Study Root C-MOVE presentation context: {e}"
                 ) from e
@@ -692,6 +703,8 @@ class DicomOperations:
                         ds, StudyRootQueryRetrieveInformationModelGet
                     )
                 except ValueError as e:
+                    if "presentation context" not in str(e):
+                        raise
                     raise AssociationError(
                         f"Peer did not accept the Study Root C-GET presentation context: {e}"
                     ) from e
@@ -786,6 +799,8 @@ class DicomOperations:
                         ds, local_aet, StudyRootQueryRetrieveInformationModelMove
                     )
                 except ValueError as e:
+                    if "presentation context" not in str(e):
+                        raise
                     raise AssociationError(
                         f"Peer did not accept the Study Root C-MOVE presentation context: {e}"
                     ) from e

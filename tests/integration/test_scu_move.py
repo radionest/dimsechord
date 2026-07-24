@@ -154,3 +154,30 @@ def test_move_context_refused_raises_association_error(free_port) -> None:
             ops.move(config, request, destination_aet="ANY")
     finally:
         pacs.stop()
+
+
+@pytest.mark.timeout(30)
+def test_retrieve_via_move_context_refused_raises_association_error(free_port) -> None:
+    """Peer accepts SR-FIND but not SR-MOVE → retrieve_via_move wraps the refusal.
+
+    The refusal fires at send_c_move(), before any C-STORE sub-operation flows, so
+    the StorageSCP never actually receives anything — only needs to be running.
+    """
+    pacs = FakePacs(aet="FINDONLY2")
+    port = free_port()
+    pacs.start(port, qr_contexts=[StudyRootQueryRetrieveInformationModelFind])
+    dest_aet = "RVMREFUSED"
+    scp = StorageSCP()
+    scp.start({dest_aet: free_port()})
+    try:
+        ops = DicomOperations(calling_aet=dest_aet)
+        config = AssociationConfig(
+            calling_aet=dest_aet, called_aet="FINDONLY2", peer_host="127.0.0.1", peer_port=port
+        )
+        request = RetrieveRequest(level=QueryRetrieveLevel.STUDY, study_instance_uid="1.2.3")
+        storage = StorageConfig(mode=StorageMode.MEMORY)
+        with pytest.raises(AssociationError, match="Study Root C-MOVE"):
+            ops.retrieve_via_move(config, request, storage, local_aet=dest_aet, scp=scp)
+    finally:
+        scp.stop()
+        pacs.stop()
