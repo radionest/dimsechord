@@ -370,3 +370,48 @@ def test_store_forwards_compressed_dataset_verbatim(scripted_scp, seeded_study) 
         assert scp.received == [(sop_uid, str(JPEGLSLossless))]
     finally:
         session.close()
+
+
+# ── StoreSession: reconnect-on-drop, ambiguous failures ────────────────────
+
+
+@pytest.mark.timeout(30)
+def test_store_reopens_association_after_drop_between_stores(
+    scripted_scp, seeded_study
+) -> None:
+    """A drop discovered between stores (nothing in flight) reopens transparently."""
+    scp, peer = scripted_scp
+    session = StoreSession(peer, calling_aet="SENDER")
+    try:
+        study = seeded_study["study"][0]
+        series = seeded_study["series"][0]
+        sop_uid_1, sop_uid_2 = seeded_study[series][0], seeded_study[series][1]
+        assert session.store(make_instance(study, series, sop_uid_1)) == 0x0000
+        scp.abort_all()
+        _wait_until(lambda: not session._assoc.is_established)
+        assert session.store(make_instance(study, series, sop_uid_2)) == 0x0000
+        assert scp.associations == 2
+    finally:
+        session.close()
+
+
+@pytest.mark.timeout(30)
+def test_store_raises_on_mid_store_abort_and_does_not_resend(
+    scripted_scp, seeded_study
+) -> None:
+    """An abort mid-C-STORE is ambiguous — it raises rather than silently
+    reconnecting, and the aborted instance is never auto-resent."""
+    scp, peer = scripted_scp
+    session = StoreSession(peer, calling_aet="SENDER")
+    try:
+        study = seeded_study["study"][0]
+        series = seeded_study["series"][0]
+        sop_uid_1, sop_uid_2 = seeded_study[series][0], seeded_study[series][1]
+        scp.abort_next = True
+        with pytest.raises(AssociationError):
+            session.store(make_instance(study, series, sop_uid_1))
+        assert session.store(make_instance(study, series, sop_uid_2)) == 0x0000
+        assert scp.associations == 2
+        assert sum(1 for uid, _ts in scp.received if uid == sop_uid_1) == 1
+    finally:
+        session.close()

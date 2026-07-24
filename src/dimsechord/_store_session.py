@@ -69,19 +69,35 @@ class StoreSession:
     def store(self, dataset: Dataset) -> int:
         sop_class = str(dataset.SOPClassUID)
         transfer_syntax = str(dataset.file_meta.TransferSyntaxUID)
-        assoc = self._ensure_association()
-        if not matches_accepted_context(assoc.accepted_contexts, sop_class, transfer_syntax):
-            raise NoPresentationContextError(sop_class, transfer_syntax)
-        # send_c_store's encoder resolves ambiguous VRs (e.g. PixelData) in
-        # place; send a copy so the caller's Dataset is never mutated (D10).
-        status = assoc.send_c_store(deepcopy(dataset))
-        if not status:
-            self._discard()
-            raise AssociationError(
-                "C-STORE got no response (association aborted or timed out); "
-                "delivery of this instance is unknown"
-            )
-        return int(status.Status)
+        for attempt in (1, 2):
+            assoc = self._ensure_association()
+            if not matches_accepted_context(
+                assoc.accepted_contexts, sop_class, transfer_syntax
+            ):
+                raise NoPresentationContextError(sop_class, transfer_syntax)
+            try:
+                # send_c_store's encoder resolves ambiguous VRs (e.g. PixelData)
+                # in place; send a copy so the caller's Dataset is never
+                # mutated (D10).
+                status = assoc.send_c_store(deepcopy(dataset))
+            except RuntimeError as exc:
+                # send_c_store's entry guard: the association died after our
+                # liveness check but before anything was sent — reopening and
+                # resending cannot duplicate. One retry, then give up.
+                self._discard()
+                if attempt == 2:
+                    raise AssociationError(
+                        "association lost before the C-STORE request was sent"
+                    ) from exc
+                continue
+            if not status:
+                self._discard()
+                raise AssociationError(
+                    "C-STORE got no response (association aborted or timed out); "
+                    "delivery of this instance is unknown"
+                )
+            return int(status.Status)
+        raise AssertionError("unreachable")
 
     def close(self) -> None:
         assoc, self._assoc = self._assoc, None
