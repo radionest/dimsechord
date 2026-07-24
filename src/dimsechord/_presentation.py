@@ -19,6 +19,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from pydicom.uid import UID
 from pynetdicom.presentation import DEFAULT_TRANSFER_SYNTAXES, build_context
 from pynetdicom.sop_class import (  # type: ignore[attr-defined]
     BasicTextSRStorage,
@@ -147,3 +148,68 @@ def build_storage_scu_contexts(
     for cls in other_classes:
         contexts.append(build_context(cls, DEFAULT_TRANSFER_SYNTAXES))
     return contexts
+
+
+def build_storage_scp_contexts(
+    image_classes: Sequence[str] = DEFAULT_IMAGE_STORAGE_CLASSES,
+    compressed_syntaxes: Sequence[str] = DEFAULT_COMPRESSED_TRANSFER_SYNTAXES,
+    other_classes: Sequence[str] = DEFAULT_OTHER_STORAGE_CLASSES,
+) -> list[PresentationContext]:
+    """Supported (acceptor-side) storage contexts from the shared matrix.
+
+    Mirror of ``build_storage_scu_contexts``: for identical arguments, every
+    (SOP class, transfer syntax) pair these contexts accept is proposable by
+    the SCU set — an instance a relay SCP accepts is always negotiable
+    upstream. Supported contexts are a matching table, never proposed, so
+    there is no 128-context limit here. Intended use::
+
+        for cx in build_storage_scp_contexts():
+            ae.add_supported_context(cx.abstract_syntax, cx.transfer_syntax)
+    """
+    contexts: list[PresentationContext] = []
+    for cls in image_classes:
+        contexts.append(
+            build_context(cls, [*DEFAULT_TRANSFER_SYNTAXES, *compressed_syntaxes])
+        )
+    for cls in other_classes:
+        contexts.append(build_context(cls, DEFAULT_TRANSFER_SYNTAXES))
+    return contexts
+
+
+def matches_accepted_context(
+    contexts: Sequence[PresentationContext],
+    sop_class_uid: str,
+    transfer_syntax: str,
+) -> bool:
+    """True if a C-STORE of (SOP class, transfer syntax) fits an accepted context.
+
+    Mirrors pynetdicom's SCU context matching (3.0.4, association.py:473-497):
+    exact transfer-syntax match; otherwise conversion is possible only between
+    uncompressed syntaxes of the same endianness (explicit<->implicit,
+    deflated<->inflated); compressed syntaxes never convert. A private or
+    otherwise unregistered transfer syntax UID can only ever match exactly —
+    pydicom cannot reason about converting it, so it never falls back to the
+    conversion rules. It replicates only pynetdicom's transfer-syntax rules,
+    not its ``as_scu`` role filter (association.py:468) — callers pass SCU-role
+    accepted contexts (``assoc.accepted_contexts`` on an SCU association), for
+    which that filter is a no-op.
+    """
+    ts = UID(transfer_syntax)
+    for cx in contexts:
+        if cx.abstract_syntax != sop_class_uid:
+            continue
+        cx_ts = UID(cx.transfer_syntax[0])
+        if cx_ts == ts:
+            return True
+        try:
+            if ts.is_compressed or cx_ts.is_compressed:
+                continue
+            if ts.is_little_endian != cx_ts.is_little_endian:
+                continue
+        except ValueError:
+            # A private/unregistered transfer syntax raises from is_compressed
+            # / is_little_endian (pydicom can't reason about its encoding); an
+            # un-reasonable UID can only match exactly, handled above.
+            continue
+        return True
+    return False

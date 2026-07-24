@@ -6,6 +6,7 @@ from dimsechord._exceptions import (
     DimsechordError,
     FindFailedError,
     MoveToSelfError,
+    NoPresentationContextError,
     PoolExhaustedError,
 )
 
@@ -18,6 +19,7 @@ from dimsechord._exceptions import (
         MoveToSelfError,
         ArrivalTimeoutError,
         FindFailedError,
+        NoPresentationContextError,
     ],
 )
 def test_all_errors_subclass_base(exc: type[Exception]) -> None:
@@ -28,3 +30,12 @@ def test_message_is_preserved() -> None:
     err = AssociationError("boom")
     assert str(err) == "boom"
     assert isinstance(err, DimsechordError)
+
+
+def test_no_presentation_context_error_attributes() -> None:
+    err = NoPresentationContextError("1.2.840.10008.5.1.4.1.1.2", "1.2.840.10008.1.2.4.80")
+    assert err.sop_class_uid == "1.2.840.10008.5.1.4.1.1.2"
+    assert err.transfer_syntax == "1.2.840.10008.1.2.4.80"
+    assert "1.2.840.10008.5.1.4.1.1.2" in str(err)
+    assert "1.2.840.10008.1.2.4.80" in str(err)
+    assert not isinstance(err, AssociationError)

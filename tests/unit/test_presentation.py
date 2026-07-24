@@ -1,7 +1,7 @@
 """Unit tests for the storage SCU presentation-context builder."""
 
 import pytest
-from pynetdicom.presentation import DEFAULT_TRANSFER_SYNTAXES
+from pynetdicom.presentation import DEFAULT_TRANSFER_SYNTAXES, build_context
 from pynetdicom.sop_class import (  # type: ignore[attr-defined]
     CTImageStorage,
     MRImageStorage,
@@ -11,10 +11,20 @@ from dimsechord._presentation import (
     DEFAULT_COMPRESSED_TRANSFER_SYNTAXES,
     DEFAULT_IMAGE_STORAGE_CLASSES,
     DEFAULT_OTHER_STORAGE_CLASSES,
+    build_storage_scp_contexts,
     build_storage_scu_contexts,
+    matches_accepted_context,
 )
 
 JPEG_LS_LOSSLESS = "1.2.840.10008.1.2.4.80"
+
+_CT = "1.2.840.10008.5.1.4.1.1.2"
+_IMPLICIT, _EXPLICIT = "1.2.840.10008.1.2", "1.2.840.10008.1.2.1"
+_BIG_ENDIAN, _JPEG_LS = "1.2.840.10008.1.2.2", "1.2.840.10008.1.2.4.80"
+# Private root (not "1.2.840.10008.") and not a registered transfer syntax, so
+# pydicom's UID.is_transfer_syntax is False for it — is_compressed/
+# is_little_endian raise ValueError rather than returning a bool.
+_PRIVATE_TS = "1.2.826.0.1.3680043.2.1143.1.2.3"
 
 
 def test_default_tuple_sizes() -> None:
@@ -81,3 +91,64 @@ def test_max_contexts_reserve_for_cget() -> None:
     # …and a tighter budget rejects them.
     with pytest.raises(ValueError, match="105"):
         build_storage_scu_contexts(max_contexts=105)
+
+
+def test_scp_contexts_image_classes_accept_compressed() -> None:
+    by_class = {c.abstract_syntax: c for c in build_storage_scp_contexts()}
+    assert len(by_class) == len(DEFAULT_IMAGE_STORAGE_CLASSES) + len(DEFAULT_OTHER_STORAGE_CLASSES)
+    for cls in DEFAULT_IMAGE_STORAGE_CLASSES:
+        ts = set(by_class[cls].transfer_syntax)
+        assert set(DEFAULT_COMPRESSED_TRANSFER_SYNTAXES) <= ts
+        assert set(DEFAULT_TRANSFER_SYNTAXES) <= ts
+
+
+def test_scp_contexts_other_classes_uncompressed_only() -> None:
+    by_class = {c.abstract_syntax: c for c in build_storage_scp_contexts()}
+    for cls in DEFAULT_OTHER_STORAGE_CLASSES:
+        assert set(by_class[cls].transfer_syntax) == set(DEFAULT_TRANSFER_SYNTAXES)
+
+
+def test_scp_accept_set_is_subset_of_scu_propose_set() -> None:
+    scu_pairs = {
+        (c.abstract_syntax, ts)
+        for c in build_storage_scu_contexts()
+        for ts in c.transfer_syntax
+    }
+    scp_pairs = {
+        (c.abstract_syntax, ts)
+        for c in build_storage_scp_contexts()
+        for ts in c.transfer_syntax
+    }
+    assert scp_pairs <= scu_pairs
+
+
+@pytest.mark.parametrize(
+    ("accepted_ts", "dataset_ts", "expected"),
+    [
+        (_EXPLICIT, _EXPLICIT, True),  # exact uncompressed
+        (_JPEG_LS, _JPEG_LS, True),  # exact compressed
+        (_IMPLICIT, _EXPLICIT, True),  # implicit<->explicit conversion
+        (_IMPLICIT, _BIG_ENDIAN, False),  # endianness mismatch never converts
+        (_EXPLICIT, _JPEG_LS, False),  # compressed never converts
+        (_JPEG_LS, _EXPLICIT, False),  # ...in either direction
+    ],
+)
+def test_matches_accepted_context(accepted_ts, dataset_ts, expected) -> None:
+    cx = build_context(_CT, [accepted_ts])
+    assert matches_accepted_context([cx], _CT, dataset_ts) is expected
+    assert not matches_accepted_context([cx], "1.2.840.10008.5.1.4.1.1.4", _EXPLICIT)
+
+
+def test_matches_accepted_context_private_ts_is_not_a_match() -> None:
+    """A private/unregistered transfer syntax can't be reasoned about for
+    conversion (is_compressed/is_little_endian raise ValueError for it); the
+    matcher must treat that as a non-match instead of letting it propagate."""
+    cx = build_context(_CT, [_EXPLICIT])
+    assert matches_accepted_context([cx], _CT, _PRIVATE_TS) is False
+
+
+def test_matches_accepted_context_private_ts_matches_when_accepted_verbatim() -> None:
+    """A peer that accepted the private TS verbatim still matches: the exact
+    string-equality check runs before any conversion reasoning."""
+    cx = build_context(_CT, [_PRIVATE_TS])
+    assert matches_accepted_context([cx], _CT, _PRIVATE_TS) is True
