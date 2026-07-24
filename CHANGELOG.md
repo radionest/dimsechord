@@ -18,7 +18,11 @@ The typed Q/R face now speaks the Study Root information model exclusively
 - **Breaking:** the `patient_id` parameter is removed from
   `DicomClient.move_study`, `move_series`, `get_study`, `get_series`,
   `get_study_to_memory`, and `get_series_to_memory` — a Study Root
-  retrieve identifier carries only the Q/R level and unique keys.
+  retrieve identifier carries only the Q/R level and unique keys. The
+  optional parameters of these methods (`timeout`, `on_progress`) are now
+  keyword-only, so a legacy positional `patient_id` argument fails with
+  `TypeError` instead of silently binding to the parameter that took its
+  position.
 - **Breaking:** `QueryRetrieveLevel.PATIENT` is removed; the enum now
   lists exactly the levels the library operates at
   (`STUDY`/`SERIES`/`IMAGE`).

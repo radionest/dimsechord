@@ -113,6 +113,7 @@ class DicomClient:
         study_uid: str,
         peer: DicomNode,
         destination_aet: str,
+        *,
         timeout: float = 300.0,
     ) -> RetrieveResult:
         config = self._create_association_config(peer.aet, peer.host, peer.port, timeout)
@@ -127,6 +128,7 @@ class DicomClient:
         series_uid: str,
         peer: DicomNode,
         destination_aet: str,
+        *,
         timeout: float = 300.0,
     ) -> RetrieveResult:
         config = self._create_association_config(peer.aet, peer.host, peer.port, timeout)
@@ -167,6 +169,7 @@ class DicomClient:
         study_uid: str,
         peer: DicomNode,
         output_dir: Path,
+        *,
         timeout: float = 300.0,
     ) -> RetrieveResult:
         return await self._retrieve_via_get(
@@ -185,6 +188,7 @@ class DicomClient:
         series_uid: str,
         peer: DicomNode,
         output_dir: Path,
+        *,
         timeout: float = 300.0,
     ) -> RetrieveResult:
         return await self._retrieve_via_get(
@@ -201,6 +205,7 @@ class DicomClient:
         self,
         study_uid: str,
         peer: DicomNode,
+        *,
         timeout: float = 300.0,
         on_progress: Callable[[int, int | None], None] | None = None,
     ) -> RetrieveResult:
@@ -220,6 +225,7 @@ class DicomClient:
         study_uid: str,
         series_uid: str,
         peer: DicomNode,
+        *,
         timeout: float = 300.0,
     ) -> RetrieveResult:
         return await self._retrieve_via_get(
