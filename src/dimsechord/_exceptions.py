@@ -32,3 +32,20 @@ class FindFailedError(DimsechordError):
     def __init__(self, status: int) -> None:
         super().__init__(f"C-FIND failed with DIMSE status 0x{status:04X}")
         self.status = status
+
+
+class NoPresentationContextError(DimsechordError):
+    """No accepted presentation context matches the dataset being stored.
+
+    Raised by ``StoreSession.store`` before anything is sent; the association
+    stays open and usable. Not an ``AssociationError``: the connection is fine,
+    this one instance is unsendable (callers typically map it to 0x0122).
+    """
+
+    def __init__(self, sop_class_uid: str, transfer_syntax: str) -> None:
+        super().__init__(
+            f"No accepted presentation context for SOP class {sop_class_uid} "
+            f"with transfer syntax {transfer_syntax}"
+        )
+        self.sop_class_uid = sop_class_uid
+        self.transfer_syntax = transfer_syntax
