@@ -594,10 +594,10 @@ class DicomOperations:
                 assoc.abort()  # _association's release() after abort is a no-op
                 raise
 
-    def move_study(
+    def move(
         self, config: AssociationConfig, request: RetrieveRequest, destination_aet: str
     ) -> RetrieveResult:
-        """Execute C-MOVE to move study to another node.
+        """Execute C-MOVE to move a study or series to another node.
 
         Args:
             config: Association configuration

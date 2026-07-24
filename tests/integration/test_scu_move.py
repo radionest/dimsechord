@@ -52,7 +52,7 @@ def test_move_study_to_external_scp(fake_pacs, seeded_study, free_port) -> None:
         request = RetrieveRequest(
             level=QueryRetrieveLevel.SERIES, study_instance_uid=study, series_instance_uid=series
         )
-        result = ops.move_study(config, request, destination_aet=dest_aet)
+        result = ops.move(config, request, destination_aet=dest_aet)
         scp.signal_end(key)
         drain.join(timeout=10)
 
@@ -132,7 +132,7 @@ def test_move_identifier_is_study_root_unique_keys_only(fake_pacs, seeded_study)
         level=QueryRetrieveLevel.SERIES, study_instance_uid=study, series_instance_uid=series
     )
     # unknown dest is fine: capture happens first
-    ops.move_study(config, request, destination_aet="NOWHERE")
+    ops.move(config, request, destination_aet="NOWHERE")
     assert fake_pacs.move_contexts[-1] == StudyRootQueryRetrieveInformationModelMove
     assert sorted(el.keyword for el in fake_pacs.move_identifiers[-1]) == [
         "QueryRetrieveLevel", "SeriesInstanceUID", "StudyInstanceUID",
@@ -151,6 +151,6 @@ def test_move_context_refused_raises_association_error(free_port) -> None:
         )
         request = RetrieveRequest(level=QueryRetrieveLevel.STUDY, study_instance_uid="1.2.3")
         with pytest.raises(AssociationError, match="Study Root C-MOVE"):
-            ops.move_study(config, request, destination_aet="ANY")
+            ops.move(config, request, destination_aet="ANY")
     finally:
         pacs.stop()

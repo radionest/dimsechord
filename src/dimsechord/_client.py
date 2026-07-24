@@ -118,7 +118,7 @@ class DicomClient:
         config = self._create_association_config(peer.aet, peer.host, peer.port, timeout)
         request = RetrieveRequest(level=QueryRetrieveLevel.STUDY, study_instance_uid=study_uid)
         return await asyncio.to_thread(
-            self._operations.move_study, config, request, destination_aet
+            self._operations.move, config, request, destination_aet
         )
 
     async def move_series(
@@ -136,7 +136,7 @@ class DicomClient:
             series_instance_uid=series_uid,
         )
         return await asyncio.to_thread(
-            self._operations.move_study, config, request, destination_aet
+            self._operations.move, config, request, destination_aet
         )
 
     async def _retrieve_via_get(
