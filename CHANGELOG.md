@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.7.0 — Unreleased
+## 0.7.0 — 2026-07-24
 
 The typed Q/R face now speaks the Study Root information model exclusively
 (issue #22): every identifier is hierarchically complete by construction. A
