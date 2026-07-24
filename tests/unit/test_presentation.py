@@ -1,7 +1,7 @@
 """Unit tests for the storage SCU presentation-context builder."""
 
 import pytest
-from pynetdicom.presentation import DEFAULT_TRANSFER_SYNTAXES
+from pynetdicom.presentation import DEFAULT_TRANSFER_SYNTAXES, build_context
 from pynetdicom.sop_class import (  # type: ignore[attr-defined]
     CTImageStorage,
     MRImageStorage,
@@ -12,9 +12,14 @@ from dimsechord._presentation import (
     DEFAULT_IMAGE_STORAGE_CLASSES,
     DEFAULT_OTHER_STORAGE_CLASSES,
     build_storage_scu_contexts,
+    matches_accepted_context,
 )
 
 JPEG_LS_LOSSLESS = "1.2.840.10008.1.2.4.80"
+
+_CT = "1.2.840.10008.5.1.4.1.1.2"
+_IMPLICIT, _EXPLICIT = "1.2.840.10008.1.2", "1.2.840.10008.1.2.1"
+_BIG_ENDIAN, _JPEG_LS = "1.2.840.10008.1.2.2", "1.2.840.10008.1.2.4.80"
 
 
 def test_default_tuple_sizes() -> None:
@@ -81,3 +86,20 @@ def test_max_contexts_reserve_for_cget() -> None:
     # …and a tighter budget rejects them.
     with pytest.raises(ValueError, match="105"):
         build_storage_scu_contexts(max_contexts=105)
+
+
+@pytest.mark.parametrize(
+    ("accepted_ts", "dataset_ts", "expected"),
+    [
+        (_EXPLICIT, _EXPLICIT, True),  # exact uncompressed
+        (_JPEG_LS, _JPEG_LS, True),  # exact compressed
+        (_IMPLICIT, _EXPLICIT, True),  # implicit<->explicit conversion
+        (_IMPLICIT, _BIG_ENDIAN, False),  # endianness mismatch never converts
+        (_EXPLICIT, _JPEG_LS, False),  # compressed never converts
+        (_JPEG_LS, _EXPLICIT, False),  # ...in either direction
+    ],
+)
+def test_matches_accepted_context(accepted_ts, dataset_ts, expected) -> None:
+    cx = build_context(_CT, [accepted_ts])
+    assert matches_accepted_context([cx], _CT, dataset_ts) is expected
+    assert not matches_accepted_context([cx], "1.2.840.10008.5.1.4.1.1.4", _EXPLICIT)

@@ -19,6 +19,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from pydicom.uid import UID
 from pynetdicom.presentation import DEFAULT_TRANSFER_SYNTAXES, build_context
 from pynetdicom.sop_class import (  # type: ignore[attr-defined]
     BasicTextSRStorage,
@@ -147,3 +148,30 @@ def build_storage_scu_contexts(
     for cls in other_classes:
         contexts.append(build_context(cls, DEFAULT_TRANSFER_SYNTAXES))
     return contexts
+
+
+def matches_accepted_context(
+    contexts: Sequence[PresentationContext],
+    sop_class_uid: str,
+    transfer_syntax: str,
+) -> bool:
+    """True if a C-STORE of (SOP class, transfer syntax) fits an accepted context.
+
+    Mirrors pynetdicom's SCU context matching (3.0.4, association.py:473-497):
+    exact transfer-syntax match; otherwise conversion is possible only between
+    uncompressed syntaxes of the same endianness (explicit<->implicit,
+    deflated<->inflated); compressed syntaxes never convert.
+    """
+    ts = UID(transfer_syntax)
+    for cx in contexts:
+        if cx.abstract_syntax != sop_class_uid:
+            continue
+        cx_ts = UID(cx.transfer_syntax[0])
+        if cx_ts == ts:
+            return True
+        if ts.is_compressed or cx_ts.is_compressed:
+            continue
+        if ts.is_little_endian != cx_ts.is_little_endian:
+            continue
+        return True
+    return False
