@@ -1,5 +1,7 @@
 import dataclasses
 import logging
+import os
+import time
 
 import pytest
 from pydicom import Dataset, dcmread
@@ -232,3 +234,38 @@ def test_oversized_reput_drops_stale_cached_entry(byte_capped_cache) -> None:
 def test_memory_max_size_gb_must_be_positive(tmp_path) -> None:
     with pytest.raises(ValueError, match="memory_max_size_gb must be positive"):
         DicomCache(base_dir=tmp_path / "cache", memory_max_size_gb=0)
+
+
+def test_evict_orphans_removes_only_old_unindexed_files(cache, tmp_path) -> None:
+    base = cache._base_dir
+    # Indexed instance written through the normal path:
+    inst = make_instance("ST", "SE", "I1")
+    cache.write_instance("ST", "SE", "I1", inst)
+    orphan_dir = base / "OSTUDY" / "OSERIES"
+    orphan_dir.mkdir(parents=True)
+    old_orphan = orphan_dir / "OLD.dcm"
+    old_orphan.write_bytes(b"leftover")
+    stale = time.time() - 7200
+    os.utime(old_orphan, (stale, stale))
+    fresh_orphan = orphan_dir / "FRESH.dcm"
+    fresh_orphan.write_bytes(b"in-flight tee")
+
+    removed = cache.evict_orphans(min_age_seconds=3600)
+
+    assert removed == 1
+    assert not old_orphan.exists()
+    assert fresh_orphan.exists()          # younger than the guard → survives
+    assert (tmp_path / "cache" / "ST" / "SE" / "I1.dcm").exists()
+
+
+def test_evict_by_size_sweeps_orphans_first(cache) -> None:
+    base = cache._base_dir
+    d = base / "OS" / "OR"
+    d.mkdir(parents=True)
+    orphan = d / "ORPHAN.dcm"
+    orphan.write_bytes(b"x")
+    stale = time.time() - 7200
+    os.utime(orphan, (stale, stale))
+    removed = cache.evict_by_size()       # cache well under budget → only the orphan
+    assert removed == 1
+    assert not orphan.exists()

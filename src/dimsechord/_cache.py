@@ -155,6 +155,8 @@ class DicomCache:
 
         Requires the completeness marker, an exact instance-row count match, and
         every file readable — a partial series is never returned (issue #15).
+        LRU is refreshed once, after every row's file has read successfully; a
+        failed load no longer touches any row, so it no longer refreshes LRU.
         """
         expected = self._index.series_expected_count(study_uid, series_uid)
         if expected is None:
@@ -177,7 +179,7 @@ class DicomCache:
                 )
                 return None
             instances[str(ds.SOPInstanceUID)] = ds
-            self._index.touch(row.sop_uid)
+        self._index.touch_many([row.sop_uid for row in rows])
         return instances
 
     def read_instance(self, study_uid: str, series_uid: str, sop_uid: str) -> Dataset | None:  # noqa: ARG002
@@ -269,11 +271,10 @@ class DicomCache:
         touched_series: set[tuple[str, str]] = set()
         for row in rows:
             Path(row.file_path).unlink(missing_ok=True)
-            self._index.delete(row.sop_uid)
             study_dirs.add(self._series_dir(row.study_uid, row.series_uid))
             touched_series.add((row.study_uid, row.series_uid))
-        for study_uid, series_uid in touched_series:
-            self._index.clear_series_complete(study_uid, series_uid)
+        self._index.delete_many([row.sop_uid for row in rows])
+        self._index.clear_series_complete_many(sorted(touched_series))
         self._cleanup_empty_dirs(study_dirs)
         return len(rows)
 
@@ -290,8 +291,41 @@ class DicomCache:
             logger.info(f"Evicted {removed} expired cache instances")
         return removed
 
+    def evict_orphans(self, min_age_seconds: float = 3600.0) -> int:
+        """Remove .dcm files that have no index row and are older than the guard.
+
+        A crash between the tee's file write and its index upsert (index commit
+        is last, see ``write_instance``) leaves a file no index-driven eviction
+        can ever see. The age guard keeps in-flight tees safe: their
+        file-before-row window is milliseconds, not hours.
+        """
+        cutoff = time.time() - min_age_seconds
+        candidates: list[Path] = []
+        for path in self._base_dir.rglob("*.dcm"):
+            try:
+                if path.stat().st_mtime < cutoff:
+                    candidates.append(path)
+            except OSError:
+                continue  # raced a concurrent eviction; skip
+        if not candidates:
+            return 0
+        indexed = self._index.existing_sop_uids([p.stem for p in candidates])
+        removed = 0
+        dirs: set[Path] = set()
+        for path in candidates:
+            if path.stem in indexed:
+                continue
+            path.unlink(missing_ok=True)
+            removed += 1
+            dirs.add(path.parent)
+        self._cleanup_empty_dirs(dirs)
+        if removed:
+            logger.info(f"Evicted {removed} orphan cache files")
+        return removed
+
     def evict_by_size(self) -> int:
-        removed = self._remove_rows(self._index.lru_over_size(self._max_size_bytes))
+        removed = self.evict_orphans()
+        removed += self._remove_rows(self._index.lru_over_size(self._max_size_bytes))
         if removed:
             logger.info(f"Evicted {removed} cache instances by size")
         return removed
