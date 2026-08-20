@@ -97,3 +97,32 @@ def test_find_cap_default_is_four() -> None:
 def test_find_cap_validation() -> None:
     with pytest.raises(ValueError):
         AssociationPool(aets=["A"], per_aet_find_cap=0)
+
+
+def test_acquire_move_timeout_raises() -> None:
+    pool = AssociationPool(["A"], per_aet_cap=1)
+    lease = pool._acquire_move(timeout=1)
+    with pytest.raises(PoolExhaustedError):
+        pool._acquire_move(timeout=0.1)
+    lease.release()
+
+
+def test_move_lease_release_is_idempotent() -> None:
+    pool = AssociationPool(["A"], per_aet_cap=1)
+    lease = pool._acquire_move(timeout=1)
+    lease.release()
+    lease.release()  # double release must NOT grow capacity beyond per_aet_cap
+    second = pool._acquire_move(timeout=0.1)
+    with pytest.raises(PoolExhaustedError):
+        pool._acquire_move(timeout=0.05)
+    second.release()
+
+
+def test_lease_context_manager_still_works_over_handle() -> None:
+    pool = AssociationPool(["A", "B"], per_aet_cap=1)
+    with pool.lease(timeout=1) as aet:
+        assert aet in pool.aets
+    # slot returned: full capacity acquirable again
+    leases = [pool._acquire_move(timeout=0.5) for _ in range(2)]
+    for lease in leases:
+        lease.release()
