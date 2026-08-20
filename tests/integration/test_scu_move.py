@@ -92,6 +92,44 @@ def test_retrieve_via_move(fake_pacs, seeded_study, free_port) -> None:
             config, request, storage, local_aet=dest_aet, scp=scp, timeout=30.0
         )
         assert result.num_completed == 2
+        assert result.instances
+    finally:
+        scp.stop()
+
+
+@pytest.mark.timeout(60)
+def test_retrieve_via_move_session_is_collect_shaped(fake_pacs, seeded_study, free_port) -> None:
+    """retrieve_via_move retains instances without double-buffering the queue."""
+    dest_aet = "COLLECTDEST"
+    dest_port = free_port()
+    scp = StorageSCP()
+    scp.start({dest_aet: dest_port})
+    fake_pacs.register_destination(dest_aet, "127.0.0.1", dest_port)
+    study, series = seeded_study["study"][0], seeded_study["series"][0]
+    captured: list = []
+    original = scp.register_session
+    def spying_register(key, **kwargs):
+        session = original(key, **kwargs)
+        captured.append(session)
+        return session
+    scp.register_session = spying_register  # type: ignore[method-assign]
+    try:
+        ops = DicomOperations(calling_aet="MOVESCU")
+        config = AssociationConfig(
+            calling_aet="MOVESCU", called_aet=fake_pacs.aet,
+            peer_host="127.0.0.1", peer_port=fake_pacs.port,
+        )
+        request = RetrieveRequest(
+            level=QueryRetrieveLevel.SERIES,
+            study_instance_uid=study, series_instance_uid=series,
+        )
+        result = ops.retrieve_via_move(
+            config, request, StorageConfig(mode=StorageMode.MEMORY),
+            local_aet=dest_aet, scp=scp,
+        )
+        assert set(result.instances) == set(seeded_study[series])
+        assert captured[0].collect is True
+        assert captured[0].queue.qsize() == 0  # nothing double-buffered
     finally:
         scp.stop()
 

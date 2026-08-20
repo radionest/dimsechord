@@ -785,7 +785,7 @@ class DicomOperations:
         series_uid = request.series_instance_uid or ""
         key = f"{request.study_instance_uid}/{series_uid}"
 
-        scp.register_session(key)
+        scp.register_session(key, collect=True)
         start_time = time.monotonic()
 
         try:
