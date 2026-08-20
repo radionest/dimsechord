@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.8.0 — 2026-08-21
+## 0.8.0 — UNRELEASED
 
 Every wait on the C-MOVE-to-self retrieve path is now short and bounded: no
 free move slot, or a same-series fetch already in flight, fails in
