@@ -23,9 +23,12 @@ logger = logging.getLogger(__name__)
 class MoveSession:
     """Tracks instances received for a single C-MOVE request.
 
-    ``queue`` streams ``(sop_uid, dataset)`` as each C-STORE arrives; a ``None``
-    sentinel (via ``signal_end``) marks end-of-stream. ``instances`` retains the
-    full set for non-streaming callers.
+    Supports two modes: streaming or collect. Streaming sessions (``collect=False``)
+    deliver instances via a bounded queue ``maxsize``; ``instances`` is never populated.
+    Collect sessions (``collect=True``) retain all instances in ``instances``; the queue
+    is unbounded and never populated. ``queue`` streams ``(sop_uid, dataset)`` as each
+    C-STORE arrives in streaming mode; a ``None`` sentinel (via ``signal_end``) marks
+    end-of-stream in both modes.
     """
 
     instances: dict[str, Dataset] = field(default_factory=dict)
@@ -34,12 +37,20 @@ class MoveSession:
     received_count: int = 0
     done: threading.Event = field(default_factory=threading.Event)
     ended: bool = False
+    collect: bool = False
+    finished: bool = False
 
 
 class StorageSCP:
     """Persistent pynetdicom Storage SCP that feeds per-session streaming queues."""
 
-    def __init__(self, supported_transfer_syntaxes: Sequence[str] = ALL_TRANSFER_SYNTAXES) -> None:
+    def __init__(
+        self,
+        supported_transfer_syntaxes: Sequence[str] = ALL_TRANSFER_SYNTAXES,
+        *,
+        maximum_associations: int = 25,
+        session_queue_maxsize: int = 64,
+    ) -> None:
         """Args:
         supported_transfer_syntaxes: Transfer syntaxes every storage context
             accepts (default: all pynetdicom knows). Supported contexts are
@@ -47,8 +58,16 @@ class StorageSCP:
             there is no 128-context limit on the accept side. Accepting all
             syntaxes lets the upstream PACS send compressed objects verbatim
             instead of failing sub-operations or transcoding.
+        maximum_associations: Maximum concurrent associations per AE (default: 25).
+            Bounds incoming connection capacity and is applied to each active
+            association engine after server start.
+        session_queue_maxsize: Bounded queue size for streaming sessions (default: 64).
+            Gives per-move backpressure by capping the instances queued before
+            receive blocks; collect sessions ignore this and use unbounded queues.
         """
         self._supported_transfer_syntaxes = list(supported_transfer_syntaxes)
+        self._maximum_associations = maximum_associations
+        self._session_queue_maxsize = session_queue_maxsize
         self._servers: list[Any] = []
         self._aes: list[Any] = []
         self._sessions: dict[str, MoveSession] = {}
@@ -85,6 +104,7 @@ class StorageSCP:
             for port, aets in by_port.items():
                 ae = AE(ae_title=aets[0])
                 ae.require_called_aet = False
+                ae.maximum_associations = self._maximum_associations
                 for ctx in StoragePresentationContexts:
                     if ctx.abstract_syntax is not None:
                         ae.add_supported_context(
@@ -116,8 +136,25 @@ class StorageSCP:
         logger.info("Storage SCP stopped")
 
     # ── Session management ────────────────────────────────────────
-    def register_session(self, key: str) -> MoveSession:
-        session = MoveSession()
+    def register_session(self, key: str, *, collect: bool = False) -> MoveSession:
+        """Register a C-MOVE session.
+
+        Args:
+            key: Session identifier (typically study_uid/series_uid).
+            collect: If True, instances are retained in ``instances`` dict and the
+                queue is unbounded; if False (default), instances stream via a
+                bounded queue and ``instances`` stays empty.
+
+        Returns:
+            A MoveSession configured for the specified mode.
+
+        Raises:
+            RuntimeError: If a session with this key is already active.
+        """
+        session = MoveSession(
+            queue=queue.Queue(maxsize=0 if collect else self._session_queue_maxsize),
+            collect=collect,
+        )
         with self._lock:
             if key in self._sessions:
                 raise RuntimeError(f"C-MOVE session already active for key={key}")

@@ -284,3 +284,29 @@ def test_scp_custom_transfer_syntaxes_restrict_matching(free_port) -> None:
             assoc.release()
     finally:
         scp.stop()
+
+
+def test_maximum_associations_default_applied(free_port) -> None:
+    scp = StorageSCP()
+    scp.start({"CAPDEF": free_port()}, ip="127.0.0.1")
+    try:
+        assert all(ae.maximum_associations == 25 for ae in scp._aes)
+    finally:
+        scp.stop()
+
+
+def test_maximum_associations_custom_applied(free_port) -> None:
+    scp = StorageSCP(maximum_associations=7)
+    scp.start({"CAPCUST": free_port()}, ip="127.0.0.1")
+    try:
+        assert all(ae.maximum_associations == 7 for ae in scp._aes)
+    finally:
+        scp.stop()
+
+
+def test_register_session_shapes() -> None:
+    scp = StorageSCP(session_queue_maxsize=3)
+    streaming = scp.register_session("s/stream")
+    collect = scp.register_session("s/collect", collect=True)
+    assert streaming.collect is False and streaming.queue.maxsize == 3
+    assert collect.collect is True
