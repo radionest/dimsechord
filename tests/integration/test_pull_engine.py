@@ -5,7 +5,7 @@ import pytest
 from pydicom.uid import JPEGLSLossless, generate_uid
 
 from dimsechord._cache import DicomCache
-from dimsechord._exceptions import AssociationError, MoveToSelfError
+from dimsechord._exceptions import AssociationError, MoveToSelfError, PoolExhaustedError
 from dimsechord._models import DicomNode, RetrieveResult
 from dimsechord._pool import AssociationPool
 from dimsechord._pull_engine import PullEngine
@@ -129,7 +129,7 @@ def test_move_under_delivery_raises_association_error(monkeypatch, engine, seede
     eng, cache = engine
     study, series = seeded_study["study"][0], seeded_study["series"][0]
 
-    def fake_move(self, config, request, destination_aet):  # noqa: ARG001
+    def fake_move(self, config, request, destination_aet, *, abort_handle=None):  # noqa: ARG001
         return RetrieveResult(status="success", num_completed=1, num_failed=1)
 
     monkeypatch.setattr(DicomOperations, "move", fake_move)
@@ -152,7 +152,7 @@ def test_move_nonsuccess_status_not_marked_complete(monkeypatch, engine, seeded_
     eng, cache = engine
     study, series = seeded_study["study"][0], seeded_study["series"][0]
 
-    def fake_move(self, config, request, destination_aet):  # noqa: ARG001
+    def fake_move(self, config, request, destination_aet, *, abort_handle=None):  # noqa: ARG001
         return RetrieveResult(status="pending", num_completed=1, num_failed=0)
 
     monkeypatch.setattr(DicomOperations, "move", fake_move)
@@ -183,7 +183,7 @@ def test_move_arrival_shortfall_not_marked_complete(monkeypatch, free_port, tmp_
         cmove_timeout=5.0, arrival_timeout=5.0, completion_grace=0.5,
     )
 
-    def fake_move(self, config, request, destination_aet):  # noqa: ARG001
+    def fake_move(self, config, request, destination_aet, *, abort_handle=None):  # noqa: ARG001
         return RetrieveResult(status="success", num_completed=2, num_failed=0)
 
     monkeypatch.setattr(DicomOperations, "move", fake_move)
@@ -224,8 +224,26 @@ def test_study_pull_marks_each_series_complete(engine, seeded_study) -> None:
 
 
 @pytest.mark.timeout(90)
-def test_aborted_stream_not_served_from_disk(engine, seeded_study, fake_pacs) -> None:
-    """Issue #15 e2e: a consumer abandoning the stream must not poison the disk tier."""
+def test_aborted_stream_not_served_from_disk(
+    monkeypatch, engine, seeded_study, fake_pacs
+) -> None:
+    """Issue #15 e2e: a consumer abandoning the stream must not poison the disk tier.
+
+    Shrinks the move AE's dimse_timeout (same test-only seam as
+    test_scu_move.py's cross-thread-abort test): abort cannot wake a driver
+    already parked in the DIMSE receive, so this bounds how long the reaper
+    takes to release the slot the re-pull below needs, instead of the real
+    ~30s dimse_timeout default.
+    """
+    original_create_ae = DicomOperations._create_ae
+
+    def create_ae_with_short_dimse(self):
+        ae = original_create_ae(self)
+        ae.dimse_timeout = 2.0  # abort can't wake a parked DIMSE receive; bound it for the test
+        return ae
+
+    monkeypatch.setattr(DicomOperations, "_create_ae", create_ae_with_short_dimse)
+
     eng, cache = engine
     study, series = seeded_study["study"][0], seeded_study["series"][0]
 
@@ -280,13 +298,17 @@ def _await_session(scp: StorageSCP, key: str, timeout: float = 5.0) -> MoveSessi
 
 @pytest.mark.timeout(30)
 def test_orphaned_move_driver_not_certified_complete(monkeypatch, free_port, tmp_path) -> None:
-    """Issue #15 blocker: a driver still alive after the bounded join must raise.
+    """Issue #15 blocker: a driver still alive after the bounded abort-join must raise,
+    and its move slot must stay held until the driver actually exits.
 
     When the stream breaks on the end-of-stream sentinel (shutdown mid-pull) while the
-    C-MOVE driver thread is still stuck inside ``move``, the bounded
-    ``move_thread.join`` returns with the thread alive, ``move_error`` empty and a
-    partial set delivered. That must raise ``AssociationError`` rather than finish
-    cleanly and certify the partial delivery as a complete series.
+    C-MOVE driver thread is still stuck inside ``move``, abort cannot wake a driver
+    already parked in the DIMSE receive (measured: it only exits at the AE's
+    dimse_timeout), so the bounded ``move_thread.join(_ABORT_JOIN_TIMEOUT)`` returns
+    with the thread alive, ``move_error`` empty and a partial set delivered. That must
+    raise ``AssociationError`` rather than finish cleanly and certify the partial
+    delivery as a complete series — and the pool must not free the slot until the
+    reaper observes the driver exit.
     """
     scp_port = free_port()
     pool = AssociationPool(aets=["ORPHANPOOL"], per_aet_cap=1)
@@ -301,7 +323,7 @@ def test_orphaned_move_driver_not_certified_complete(monkeypatch, free_port, tmp
 
     release = threading.Event()
 
-    def blocking_move(self, config, request, destination_aet):  # noqa: ARG001
+    def blocking_move(self, config, request, destination_aet, *, abort_handle=None):  # noqa: ARG001
         release.wait(timeout=20)  # driver hangs here → thread stays alive
         return RetrieveResult(status="success", num_completed=1, num_failed=0)
 
@@ -329,6 +351,21 @@ def test_orphaned_move_driver_not_certified_complete(monkeypatch, free_port, tmp
         consumer.join(timeout=10)
         assert not consumer.is_alive()
         assert isinstance(result.get("error"), AssociationError)
+        # The slot must NOT have been returned while the driver is alive…
+        with pytest.raises(PoolExhaustedError):
+            pool._acquire_move(timeout=0.1)
+        # …and must return via the reaper once the driver exits.
+        release.set()
+        deadline = time.monotonic() + 5.0
+        reacquired = None
+        while time.monotonic() < deadline:
+            try:
+                reacquired = pool._acquire_move(timeout=0.2)
+                break
+            except PoolExhaustedError:
+                continue
+        assert reacquired is not None
+        reacquired.release()
         assert cache._index.series_expected_count(study, series) is None
         assert cache.series_cached(study, series) is False
     finally:
