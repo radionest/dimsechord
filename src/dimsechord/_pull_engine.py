@@ -100,20 +100,21 @@ class _MoveToSelfTransport:
         yielded = 0
         move_error: list[Exception] = []
         abort_handle = MoveAbortHandle()
-        move_thread = threading.Thread(
-            target=self._drive_move,
-            args=(scp_key, request, move_error, lease.aet, abort_handle),
-            name=f"dimsechord-move-{scp_key}",
-            daemon=True,
-        )
         try:
+            move_thread = threading.Thread(
+                target=self._drive_move,
+                args=(scp_key, request, move_error, lease.aet, abort_handle),
+                name=f"dimsechord-move-{scp_key}",
+                daemon=True,
+            )
             move_thread.start()
         except BaseException:
             # Same shape as the register_session guard above: a thread that
-            # never started must not hold the session open (poisons future
-            # register_session calls for this key) or the lease (permanently
-            # shrinks the pool) — both matter most exactly when the host is
-            # under the thread/association pressure that would cause this.
+            # never got constructed/started must not hold the session open
+            # (poisons future register_session calls for this key) or the
+            # lease (permanently shrinks the pool) — both matter most exactly
+            # when the host is under the thread/association pressure that
+            # would cause this.
             self._scp.finish_session(scp_key)
             lease.release()
             raise
@@ -144,12 +145,24 @@ class _MoveToSelfTransport:
                     f"{_ABORT_JOIN_TIMEOUT}s after abort — deferring slot release "
                     "until it exits (expected within the DIMSE timeout)"
                 )
-                threading.Thread(
+                reaper = threading.Thread(
                     target=self._reap,
                     args=(move_thread, lease, scp_key),
                     name=f"dimsechord-move-reaper-{scp_key}",
                     daemon=True,
-                ).start()
+                )
+                try:
+                    reaper.start()
+                except Exception:
+                    # Releasing here would hand the AET to a new move while the old
+                    # driver may still be alive — leaking the slot is the safe failure.
+                    # Swallowed deliberately: the in-flight exception (GeneratorExit,
+                    # ArrivalTimeoutError, ...) and the post-loop guard below must
+                    # survive a reaper-spawn failure, not be clobbered by it.
+                    logger.error(
+                        f"Could not start reaper for {scp_key} (AET {lease.aet}); "
+                        "move slot deliberately leaked until process restart"
+                    )
             else:
                 lease.release()
 
@@ -213,7 +226,14 @@ class _MoveToSelfTransport:
                         "not caching a partial series."
                     )
         except Exception as e:
-            logger.error(f"C-MOVE driver failed for {scp_key}: {e}")
+            if abort_handle.aborted:
+                # Normal on the abandon path: the consumer's own abort caused
+                # this failure, so it is not an operational error worth
+                # paging on — error_holder still records it (nobody reads it
+                # on this path, but the shape stays uniform).
+                logger.info(f"C-MOVE driver for {scp_key} ended after abort: {e}")
+            else:
+                logger.error(f"C-MOVE driver failed for {scp_key}: {e}")
             error_holder.append(e)
         finally:
             self._scp.signal_end(scp_key)

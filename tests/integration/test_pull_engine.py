@@ -426,6 +426,89 @@ def test_move_thread_start_failure_releases_lease_and_session(
         cache.shutdown()
 
 
+@pytest.mark.timeout(30)
+def test_reaper_start_failure_leaks_slot_but_preserves_original_error(
+    monkeypatch, free_port, tmp_path, caplog
+) -> None:
+    """A reaper-spawn failure must not clobber the driver-timeout error.
+
+    Controller ruling: releasing the lease when the reaper itself cannot be
+    started would let a new move reuse the AET while the old driver may
+    still be alive — worse than leaking the slot. So a ``Thread.start()``
+    failure for the reaper is caught, logged at error level (an operator
+    must see the deliberately leaked slot), and swallowed: it must not
+    surface as a ``RuntimeError`` in place of the driver's own
+    ``AssociationError``, and the slot must stay leaked — no other path
+    recovers it.
+
+    Reuses the hung-driver setup from the reaper test above, but fails only
+    the reaper's own ``Thread.start()`` (matched by thread name — the driver
+    must start normally so it actually reaches the alive-after-join state
+    that triggers a reaper spawn attempt).
+    """
+    scp_port = free_port()
+    pool = AssociationPool(aets=["REAPERFAILPOOL"], per_aet_cap=1)
+    scp = StorageSCP()
+    scp.start({"REAPERFAILPOOL": scp_port})
+    cache = DicomCache(base_dir=tmp_path / "cache", index_path=tmp_path / "index.db")
+    pacs = DicomNode(aet="PACS", host="127.0.0.1", port=free_port())
+    eng = PullEngine(
+        pool=pool, scp=scp, cache=cache, pacs=pacs,
+        cmove_timeout=0.5, arrival_timeout=30.0,
+    )
+
+    release = threading.Event()
+
+    def blocking_move(self, config, request, destination_aet, *, abort_handle=None):  # noqa: ARG001
+        release.wait(timeout=20)  # driver hangs here → thread stays alive
+        return RetrieveResult(status="success", num_completed=1, num_failed=0)
+
+    monkeypatch.setattr(DicomOperations, "move", blocking_move)
+
+    original_start = threading.Thread.start
+
+    def start_but_fail_reaper(self):
+        if self.name.startswith("dimsechord-move-reaper-"):
+            raise RuntimeError("can't start new thread")
+        return original_start(self)
+
+    monkeypatch.setattr(threading.Thread, "start", start_but_fail_reaper)
+
+    study, series = "9.9.9.REAPERFAIL", "8.8.8.REAPERFAIL"
+    scp_key = f"{study}/{series}"
+    result: dict[str, object] = {}
+
+    def consume() -> None:
+        try:
+            result["received"] = list(eng.iter_series(study, series))
+        except Exception as e:
+            result["error"] = e
+
+    consumer = threading.Thread(target=consume, name="reaperfail-consumer")
+    try:
+        with caplog.at_level("ERROR", logger="dimsechord._pull_engine"):
+            consumer.start()
+            session = _await_session(scp, scp_key)
+            # Deliver one instance, then end the stream while the driver is still hung.
+            inst = make_instance(study, series, "1.2.3.REAPERFAIL.1")
+            session.queue.put(("1.2.3.REAPERFAIL.1", inst))
+            scp.signal_end(scp_key)
+
+            consumer.join(timeout=10)
+        assert not consumer.is_alive()
+        # The driver's own timeout error must surface — not the reaper's RuntimeError.
+        assert isinstance(result.get("error"), AssociationError)
+        assert "did not finish within" in str(result["error"])
+        assert any("Could not start reaper" in r.message for r in caplog.records)
+        # The slot stays deliberately leaked; nothing else recovers it.
+        with pytest.raises(PoolExhaustedError):
+            pool._acquire_move(timeout=0.1)
+    finally:
+        release.set()  # let the orphaned driver thread finish and die
+        scp.stop()
+        cache.shutdown()
+
+
 @pytest.mark.timeout(90)
 def test_move_to_self_compressed_series_verbatim(engine, fake_pacs, seeded_study) -> None:
     """A compressed series survives C-MOVE-to-self byte-identical (no transcoding)."""
