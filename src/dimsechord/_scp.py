@@ -26,10 +26,11 @@ class MoveSession:
 
     Supports two modes: streaming or collect. Streaming sessions (``collect=False``)
     deliver instances via a bounded queue ``maxsize``; ``instances`` is never populated.
-    Collect sessions (``collect=True``) retain all instances in ``instances``; the queue
-    is unbounded and never populated. ``queue`` streams ``(sop_uid, dataset)`` as each
-    C-STORE arrives in streaming mode; a ``None`` sentinel (via ``signal_end``) marks
-    end-of-stream in both modes.
+    ``queue`` streams ``(sop_uid, dataset)`` as each C-STORE arrives, and a ``None``
+    sentinel (via ``signal_end``) marks end-of-stream. Collect sessions (``collect=True``)
+    retain all instances in ``instances`` instead; the queue is unbounded and never
+    populated — ``signal_end``/``stop`` skip the sentinel push for these sessions, since
+    there is no queue consumer on the collect path to receive it.
     """
 
     instances: dict[str, Dataset] = field(default_factory=dict)
@@ -249,7 +250,7 @@ class StorageSCP:
             if not self._put_bounded(session, (sop_uid, ds)):
                 logger.warning(
                     f"Dropping C-STORE for dead session {study_uid}/{series_uid} "
-                    "(queue full and session already ended)"
+                    "(queue full and session already ended/finished)"
                 )
                 return 0x0000
             with self._lock:
