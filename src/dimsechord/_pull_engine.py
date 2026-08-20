@@ -22,7 +22,12 @@ from weakref import WeakValueDictionary
 
 from dimsechord._bridge import iter_to_aiter
 from dimsechord._cache import MemoryCachedSeries
-from dimsechord._exceptions import ArrivalTimeoutError, AssociationError, MoveToSelfError
+from dimsechord._exceptions import (
+    ArrivalTimeoutError,
+    AssociationError,
+    MoveToSelfError,
+    RetrieveBusyError,
+)
 from dimsechord._models import (
     AssociationConfig,
     DicomNode,
@@ -384,7 +389,13 @@ class PullEngine:
             yield from cached.instances.values()
             return
 
-        with self._get_lock(self._series_key(study_uid, series_uid)):
+        lock = self._get_lock(self._series_key(study_uid, series_uid))
+        if not lock.acquire(timeout=self._move_lease_timeout):
+            raise RetrieveBusyError(
+                f"Series {study_uid}/{series_uid} is already being retrieved; "
+                f"no coalescing slot within {self._move_lease_timeout}s"
+            )
+        try:
             # 2. Double-check memory after acquiring the lock (coalescing).
             cached = self._cache.get_series_from_memory(study_uid, series_uid)
             if cached is not None:
@@ -407,6 +418,8 @@ class PullEngine:
                 series_instance_uid=series_uid,
             )
             yield from self._fetch(study_uid, series_uid, request)
+        finally:
+            lock.release()
 
     def iter_study(self, study_uid: str, series_uids: list[str]) -> Iterator[Dataset]:
         # Fast path: every requested series already in memory.
@@ -419,11 +432,19 @@ class PullEngine:
                     yield from cached.instances.values()
             return
 
-        with self._get_lock(f"{study_uid}/__STUDY__"):
+        lock = self._get_lock(f"{study_uid}/__STUDY__")
+        if not lock.acquire(timeout=self._move_lease_timeout):
+            raise RetrieveBusyError(
+                f"Study {study_uid} is already being retrieved; "
+                f"no coalescing slot within {self._move_lease_timeout}s"
+            )
+        try:
             request = RetrieveRequest(
                 level=QueryRetrieveLevel.STUDY, study_instance_uid=study_uid
             )
             yield from self._fetch(study_uid, None, request)
+        finally:
+            lock.release()
 
     def _fetch(
         self, study_uid: str, series_uid: str | None, request: RetrieveRequest
