@@ -61,8 +61,8 @@ class StorageSCP:
             syntaxes lets the upstream PACS send compressed objects verbatim
             instead of failing sub-operations or transcoding.
         maximum_associations: Maximum concurrent associations per AE (default: 25).
-            Bounds incoming connection capacity and is applied to each active
-            association engine after server start.
+            Bounds incoming connection capacity and is set on each per-port AE
+            before the server starts.
         session_queue_maxsize: Bounded queue size for streaming sessions (default: 64).
             Gives per-move backpressure by capping the instances queued before
             receive blocks; collect sessions ignore this and use unbounded queues.

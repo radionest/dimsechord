@@ -96,15 +96,15 @@ class _MoveToSelfTransport:
         scp_key = self._scp_key(request)
         # Fail fast BEFORE any upstream work: no slot → typed error in
         # move_lease_timeout, with no session registered and no C-MOVE issued.
+        yielded = 0
+        move_error: list[Exception] = []
+        abort_handle = MoveAbortHandle()
         lease = self._pool._acquire_move(timeout=self._move_lease_timeout)
         try:
             session = self._scp.register_session(scp_key)
         except BaseException:
             lease.release()
             raise
-        yielded = 0
-        move_error: list[Exception] = []
-        abort_handle = MoveAbortHandle()
         try:
             move_thread = threading.Thread(
                 target=self._drive_move,
