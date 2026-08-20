@@ -241,11 +241,13 @@ def test_evict_orphans_removes_only_old_unindexed_files(cache, tmp_path) -> None
     # Indexed instance written through the normal path:
     inst = make_instance("ST", "SE", "I1")
     cache.write_instance("ST", "SE", "I1", inst)
+    indexed_file = tmp_path / "cache" / "ST" / "SE" / "I1.dcm"
+    stale = time.time() - 7200
+    os.utime(indexed_file, (stale, stale))  # old but indexed — must survive
     orphan_dir = base / "OSTUDY" / "OSERIES"
     orphan_dir.mkdir(parents=True)
     old_orphan = orphan_dir / "OLD.dcm"
     old_orphan.write_bytes(b"leftover")
-    stale = time.time() - 7200
     os.utime(old_orphan, (stale, stale))
     fresh_orphan = orphan_dir / "FRESH.dcm"
     fresh_orphan.write_bytes(b"in-flight tee")
@@ -255,7 +257,7 @@ def test_evict_orphans_removes_only_old_unindexed_files(cache, tmp_path) -> None
     assert removed == 1
     assert not old_orphan.exists()
     assert fresh_orphan.exists()          # younger than the guard → survives
-    assert (tmp_path / "cache" / "ST" / "SE" / "I1.dcm").exists()
+    assert indexed_file.exists()          # old but indexed → survives
 
 
 def test_evict_by_size_sweeps_orphans_first(cache) -> None:
