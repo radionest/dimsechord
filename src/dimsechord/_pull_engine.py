@@ -106,7 +106,17 @@ class _MoveToSelfTransport:
             name=f"dimsechord-move-{scp_key}",
             daemon=True,
         )
-        move_thread.start()
+        try:
+            move_thread.start()
+        except BaseException:
+            # Same shape as the register_session guard above: a thread that
+            # never started must not hold the session open (poisons future
+            # register_session calls for this key) or the lease (permanently
+            # shrinks the pool) — both matter most exactly when the host is
+            # under the thread/association pressure that would cause this.
+            self._scp.finish_session(scp_key)
+            lease.release()
+            raise
         try:
             while True:
                 item = self._blocking_get(session, self._arrival_timeout)

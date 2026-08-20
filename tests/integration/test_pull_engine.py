@@ -374,6 +374,58 @@ def test_orphaned_move_driver_not_certified_complete(monkeypatch, free_port, tmp
         cache.shutdown()
 
 
+@pytest.mark.timeout(30)
+def test_move_thread_start_failure_releases_lease_and_session(
+    monkeypatch, free_port, tmp_path
+) -> None:
+    """A ``Thread.start()`` failure must not leak the lease or the session.
+
+    Thread creation can fail under real thread/association pressure — the same
+    conditions the production incident this transport fixes happened under.
+    Left unhandled, a failed start would permanently shrink the pool (leaked
+    lease) AND poison every future pull for this key (the session is never
+    unregistered, so ``register_session`` raises ``RuntimeError`` for it
+    forever). Simulates the failure with a ``threading.Thread.start`` that
+    raises once, mirroring ``_thread.start_new_thread``'s real
+    ``RuntimeError("can't start new thread")``.
+    """
+    scp_port = free_port()
+    pool = AssociationPool(aets=["STARTFAILPOOL"], per_aet_cap=1)
+    scp = StorageSCP()
+    scp.start({"STARTFAILPOOL": scp_port})
+    cache = DicomCache(base_dir=tmp_path / "cache", index_path=tmp_path / "index.db")
+    pacs = DicomNode(aet="PACS", host="127.0.0.1", port=free_port())
+    eng = PullEngine(pool=pool, scp=scp, cache=cache, pacs=pacs, arrival_timeout=5.0)
+
+    study, series = "9.9.9.STARTFAIL", "8.8.8.STARTFAIL"
+    scp_key = f"{study}/{series}"
+
+    original_start = threading.Thread.start
+    calls = {"n": 0}
+
+    def failing_start(self):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            raise RuntimeError("can't start new thread")
+        return original_start(self)
+
+    monkeypatch.setattr(threading.Thread, "start", failing_start)
+
+    try:
+        with pytest.raises(RuntimeError, match="can't start new thread"):
+            list(eng.iter_series(study, series))
+
+        # The session must not be left registered forever…
+        with scp._lock:
+            assert scp_key not in scp._sessions
+        # …and the lease must be reusable, not leaked.
+        reacquired = pool._acquire_move(timeout=0.2)
+        reacquired.release()
+    finally:
+        scp.stop()
+        cache.shutdown()
+
+
 @pytest.mark.timeout(90)
 def test_move_to_self_compressed_series_verbatim(engine, fake_pacs, seeded_study) -> None:
     """A compressed series survives C-MOVE-to-self byte-identical (no transcoding)."""
