@@ -199,6 +199,55 @@ def _storage_contexts_for_datasets(
     return contexts
 
 
+class MoveAbortHandle:
+    """Cross-thread abort control for an in-flight C-MOVE.
+
+    The driver attaches the established association; the consumer calls
+    ``abort()`` when it abandons the move. Aborting reliably keeps the move
+    from ever reporting success — the peer's own C-MOVE handling is expected
+    to stop delivering further sub-operations once it notices the requesting
+    association is gone — but it is best-effort about *how fast* the
+    driver's blocked call notices: with pynetdicom (verified against 3.0.4),
+    a thread already parked waiting for the next DIMSE response is not woken
+    by another thread's ``assoc.abort()`` — that wait only ever resolves via
+    the association's ``dimse_timeout`` (default 30 s), not the abort itself.
+    Callers needing a bounded wait must not join the driver thread
+    indefinitely. ``abort()`` before ``attach()`` marks the handle so the
+    driver refuses to dispatch the move.
+    """
+
+    def __init__(self) -> None:
+        self._lock = threading.Lock()
+        self._assoc: Any = None
+        self._aborted = False
+
+    @property
+    def aborted(self) -> bool:
+        with self._lock:
+            return self._aborted
+
+    def attach(self, assoc: Any) -> bool:
+        """Register the established association; False if already aborted."""
+        with self._lock:
+            if self._aborted:
+                return False
+            self._assoc = assoc
+            return True
+
+    def abort(self) -> None:
+        """Abort the attached association (idempotent, best-effort)."""
+        with self._lock:
+            if self._aborted:
+                return
+            self._aborted = True
+            assoc = self._assoc
+        if assoc is not None:
+            try:
+                assoc.abort()
+            except Exception as e:  # already released / torn down — nothing to abort
+                logger.debug(f"MoveAbortHandle: abort raised {e!r}")
+
+
 class DicomOperations:
     """Synchronous DICOM operations wrapper for pynetdicom."""
 
@@ -603,7 +652,12 @@ class DicomOperations:
                 raise
 
     def move(
-        self, config: AssociationConfig, request: RetrieveRequest, destination_aet: str
+        self,
+        config: AssociationConfig,
+        request: RetrieveRequest,
+        destination_aet: str,
+        *,
+        abort_handle: "MoveAbortHandle | None" = None,
     ) -> RetrieveResult:
         """Execute C-MOVE to move a study, series, or image to another node.
 
@@ -611,18 +665,25 @@ class DicomOperations:
             config: Association configuration
             request: Retrieve request
             destination_aet: Destination AE title
+            abort_handle: Optional cross-thread abort control; when the handle was
+                already aborted before this call, the move is never dispatched.
 
         Returns:
             Retrieve result
 
         Raises:
-            AssociationError: If association fails or the peer refuses the Study Root
-                C-MOVE presentation context.
+            AssociationError: If association fails, the peer refuses the Study Root
+                C-MOVE presentation context, or abort_handle was already aborted
+                before the association could be attached.
         """
         ae = self._create_ae()
         ds = self._build_retrieve_dataset(request)
 
         with self._association(ae, config) as assoc:
+            if abort_handle is not None and not abort_handle.attach(assoc):
+                raise AssociationError(
+                    "C-MOVE cancelled before dispatch — consumer abandoned the retrieve"
+                )
             result = RetrieveResult(status="pending")
             try:
                 responses = assoc.send_c_move(
