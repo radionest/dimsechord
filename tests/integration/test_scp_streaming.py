@@ -1,3 +1,5 @@
+import threading
+import time
 from types import SimpleNamespace
 
 import pytest
@@ -310,3 +312,75 @@ def test_register_session_shapes() -> None:
     collect = scp.register_session("s/collect", collect=True)
     assert streaming.collect is False and streaming.queue.maxsize == 3
     assert collect.collect is True
+
+
+def test_streaming_session_does_not_retain_instances(running_scp, seeded_study) -> None:
+    scp, port = running_scp
+    study, series = seeded_study["study"][0], seeded_study["series"][0]
+    session = scp.register_session(f"{study}/{series}")
+    inst = make_instance(study, series, seeded_study[series][0])
+    ae = AE(ae_title="SENDER")
+    ae.add_requested_context(MRImageStorage)
+    assoc = ae.associate("127.0.0.1", port, ae_title="DEST1")
+    assert assoc.is_established
+    try:
+        assert assoc.send_c_store(inst).Status == 0x0000
+    finally:
+        assoc.release()
+    assert session.queue.get(timeout=10)[0] == seeded_study[series][0]
+    assert session.instances == {}  # single buffering: streaming keeps nothing
+
+
+def test_full_queue_drops_only_dead_sessions(seeded_study) -> None:
+    """A full queue parks the handler while the session lives, drops once it ended."""
+    scp = StorageSCP(session_queue_maxsize=1)
+    study, series = seeded_study["study"][0], seeded_study["series"][0]
+    key = f"{study}/{series}"
+    session = scp.register_session(key)
+    ds = make_instance(study, series, seeded_study[series][0])
+    event = SimpleNamespace(dataset=ds, file_meta=ds.file_meta)
+    assert scp._handle_store(event) == 0x0000          # fills the queue
+    assert session.received_count == 1
+
+    # Second store on a full queue: flip ended from a timer → handler drops, returns.
+    ds2 = make_instance(study, series, seeded_study[series][1])
+    event2 = SimpleNamespace(dataset=ds2, file_meta=ds2.file_meta)
+    timer = threading.Timer(0.6, lambda: setattr(session, "ended", True))
+    timer.start()
+    start = time.monotonic()
+    assert scp._handle_store(event2) == 0x0000
+    assert 0.4 < time.monotonic() - start < 5.0        # parked, then gave up on ended
+    assert session.received_count == 1                 # dropped item was never counted
+    timer.join()
+
+
+def test_full_queue_backpressure_releases_on_drain(seeded_study) -> None:
+    scp = StorageSCP(session_queue_maxsize=1)
+    study, series = seeded_study["study"][0], seeded_study["series"][0]
+    session = scp.register_session(f"{study}/{series}")
+    for sop in seeded_study[series]:  # 2 instances; queue holds 1
+        ds = make_instance(study, series, sop)
+        event = SimpleNamespace(dataset=ds, file_meta=ds.file_meta)
+        threading.Timer(0.5, session.queue.get).start()  # a consumer drains later
+        assert scp._handle_store(event) == 0x0000
+    assert session.received_count == 2                 # both eventually counted
+
+
+def test_signal_end_sentinel_waits_for_live_consumer(seeded_study) -> None:
+    """ended=True is set before the sentinel put; the sentinel must still be
+    delivered to a live consumer even if the queue is momentarily full."""
+    scp = StorageSCP(session_queue_maxsize=1)
+    study, series = seeded_study["study"][0], seeded_study["series"][0]
+    key = f"{study}/{series}"
+    session = scp.register_session(key)
+    session.queue.put(("sop", None))                   # fill the queue
+    got: list = []
+    def drain() -> None:
+        time.sleep(0.5)
+        got.append(session.queue.get(timeout=5))       # frees the slot
+        got.append(session.queue.get(timeout=5))       # then receives the sentinel
+    t = threading.Thread(target=drain)
+    t.start()
+    scp.signal_end(key)                                # must not wedge; sentinel lands
+    t.join(timeout=10)
+    assert got[1] is None
