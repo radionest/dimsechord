@@ -31,6 +31,7 @@ from dimsechord._exceptions import (
     MoveToSelfError,
     NoPresentationContextError,
     PoolExhaustedError,
+    RetrieveBusyError,
 )
 from dimsechord._models import (
     BatchStoreResult,
@@ -87,6 +88,7 @@ __all__ = [  # noqa: RUF022
     "PullEngine",
     "QueryEngine",
     "QueryRetrieveLevel",
+    "RetrieveBusyError",
     "RetrieveResult",
     "SeriesQuery",
     "SeriesResult",

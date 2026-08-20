@@ -8,6 +8,7 @@ from dimsechord._exceptions import (
     MoveToSelfError,
     NoPresentationContextError,
     PoolExhaustedError,
+    RetrieveBusyError,
 )
 
 
@@ -20,6 +21,7 @@ from dimsechord._exceptions import (
         ArrivalTimeoutError,
         FindFailedError,
         NoPresentationContextError,
+        RetrieveBusyError,
     ],
 )
 def test_all_errors_subclass_base(exc: type[Exception]) -> None:
@@ -39,3 +41,10 @@ def test_no_presentation_context_error_attributes() -> None:
     assert "1.2.840.10008.5.1.4.1.1.2" in str(err)
     assert "1.2.840.10008.1.2.4.80" in str(err)
     assert not isinstance(err, AssociationError)
+
+
+def test_retrieve_busy_error_is_pool_exhausted() -> None:
+    # Deployed consumers catch PoolExhaustedError; the busy error must ride that handler.
+    assert issubclass(RetrieveBusyError, PoolExhaustedError)
+    with pytest.raises(PoolExhaustedError):
+        raise RetrieveBusyError("series busy")

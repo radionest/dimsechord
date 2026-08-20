@@ -13,6 +13,16 @@ class PoolExhaustedError(DimsechordError):
     """No association slot was available within the lease timeout."""
 
 
+class RetrieveBusyError(PoolExhaustedError):
+    """The same series/study is already being retrieved by another consumer.
+
+    Raised when the per-key coalescing wait exceeds ``move_lease_timeout``.
+    Subclasses ``PoolExhaustedError`` deliberately: deployed consumers that map
+    pool exhaustion to a retry-later DIMSE status (0xA702) handle this
+    identically without a code change.
+    """
+
+
 class MoveToSelfError(DimsechordError):
     """A C-MOVE-to-self completed reporting zero sub-operations.
 
