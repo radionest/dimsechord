@@ -180,10 +180,11 @@ def test_touch_many_updates_all_with_one_commit_per_chunk() -> None:
     assert all(r.last_accessed == 9999.0 for r in idx.get_series("S", "R"))
 
 
-def test_existing_sop_uids_partitions_candidates() -> None:
+def test_existing_file_paths_partitions_candidates() -> None:
     idx = CacheIndex(":memory:")
     uids = _seed(idx, 5)
-    assert idx.existing_sop_uids([*uids[:3], "MISSING1", "MISSING2"]) == set(uids[:3])
+    expected = {f"/f/{u}" for u in uids[:3]}
+    assert idx.existing_file_paths([*uids[:3], "MISSING1", "MISSING2"]) == expected
 
 
 def test_clear_series_complete_many() -> None:

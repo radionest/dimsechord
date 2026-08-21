@@ -278,11 +278,21 @@ class DicomCache:
         self._cleanup_empty_dirs(study_dirs)
         return len(rows)
 
-    @staticmethod
-    def _cleanup_empty_dirs(series_dirs: set[Path]) -> None:
+    def _cleanup_empty_dirs(self, series_dirs: set[Path]) -> None:
+        """rmdir empty study/series dirs, confined to the cache tree.
+
+        Never removes ``base_dir`` itself or anything outside it — a guard
+        against a caller-supplied study/series dir that resolves elsewhere.
+        """
         for series_dir in series_dirs:
             for d in (series_dir, series_dir.parent):
-                if d.exists() and d.is_dir() and not any(d.iterdir()):
+                if (
+                    d.is_relative_to(self._base_dir)
+                    and d != self._base_dir
+                    and d.exists()
+                    and d.is_dir()
+                    and not any(d.iterdir())
+                ):
                     d.rmdir()
 
     def evict_expired(self) -> int:
@@ -297,7 +307,11 @@ class DicomCache:
         A crash between the tee's file write and its index upsert (index commit
         is last, see ``write_instance``) leaves a file no index-driven eviction
         can ever see. The age guard keeps in-flight tees safe: their
-        file-before-row window is milliseconds, not hours.
+        file-before-row window is milliseconds, not hours. A candidate is
+        checked against the index by exact file path, not just SOP UID, so a
+        re-homed instance's old file is still swept; each is also re-stat'd
+        immediately before removal so a concurrent tee re-writing the same SOP
+        during the sweep is spared.
         """
         cutoff = time.time() - min_age_seconds
         candidates: list[Path] = []
@@ -309,12 +323,19 @@ class DicomCache:
                 continue  # raced a concurrent eviction; skip
         if not candidates:
             return 0
-        indexed = self._index.existing_sop_uids([p.stem for p in candidates])
+        indexed_paths = self._index.existing_file_paths([p.stem for p in candidates])
         removed = 0
         dirs: set[Path] = set()
         for path in candidates:
-            if path.stem in indexed:
+            if str(path) in indexed_paths:
                 continue
+            try:
+                # A concurrent tee re-writing this same SOP since collection
+                # refreshes its mtime — spare it rather than race the write.
+                if path.stat().st_mtime >= cutoff:
+                    continue
+            except OSError:
+                continue  # gone since collection — nothing to unlink
             path.unlink(missing_ok=True)
             removed += 1
             dirs.add(path.parent)

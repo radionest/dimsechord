@@ -255,16 +255,16 @@ class CacheIndex:
             )
             self._conn.commit()
 
-    def existing_sop_uids(self, candidates: list[str]) -> set[str]:
+    def existing_file_paths(self, sop_uids: list[str]) -> set[str]:
         found: set[str] = set()
         with self._lock:
-            for i in range(0, len(candidates), _SQL_CHUNK):
-                chunk = candidates[i : i + _SQL_CHUNK]
+            for i in range(0, len(sop_uids), _SQL_CHUNK):
+                chunk = sop_uids[i : i + _SQL_CHUNK]
                 placeholders = ",".join("?" * len(chunk))
                 cur = self._conn.execute(
-                    f"SELECT sop_uid FROM instances WHERE sop_uid IN ({placeholders})", chunk
+                    f"SELECT file_path FROM instances WHERE sop_uid IN ({placeholders})", chunk
                 )
-                found.update(r["sop_uid"] for r in cur.fetchall())
+                found.update(r["file_path"] for r in cur.fetchall())
         return found
 
     def close(self) -> None:

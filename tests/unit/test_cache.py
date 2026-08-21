@@ -2,6 +2,8 @@ import dataclasses
 import logging
 import os
 import time
+import types
+from pathlib import Path
 
 import pytest
 from pydicom import Dataset, dcmread
@@ -258,6 +260,69 @@ def test_evict_orphans_removes_only_old_unindexed_files(cache, tmp_path) -> None
     assert not old_orphan.exists()
     assert fresh_orphan.exists()          # younger than the guard → survives
     assert indexed_file.exists()          # old but indexed → survives
+
+
+def test_evict_orphans_sweeps_rehomed_instance_old_file(cache, tmp_path) -> None:
+    """A re-homed instance's OLD file path is swept — the exact indexed path
+    is what's spared, not merely a matching SOP UID."""
+    old_inst = make_instance("ST", "SE", "I1")
+    cache.write_instance("ST", "SE", "I1", old_inst)
+    old_file = tmp_path / "cache" / "ST" / "SE" / "I1.dcm"
+    stale = time.time() - 7200
+    os.utime(old_file, (stale, stale))
+
+    # Re-home: same SOP UID now indexed under a different study/series; the
+    # stale original file is left behind on disk.
+    new_inst = make_instance("ST2", "SE2", "I1")
+    cache.write_instance("ST2", "SE2", "I1", new_inst)
+    new_file = tmp_path / "cache" / "ST2" / "SE2" / "I1.dcm"
+
+    removed = cache.evict_orphans(min_age_seconds=3600)
+
+    assert removed == 1
+    assert not old_file.exists()   # same SOP UID, stale path — no longer indexed here
+    assert new_file.exists()       # current indexed path — survives
+
+
+def test_evict_orphans_spares_file_refreshed_during_sweep(cache, monkeypatch) -> None:
+    """A file whose mtime is refreshed between candidate collection and the
+    pre-unlink re-stat — a concurrent tee re-writing the same SOP — survives
+    despite being unindexed."""
+    base = cache._base_dir
+    d = base / "OS" / "OR"
+    d.mkdir(parents=True)
+    target = d / "REFRESHED.dcm"
+    target.write_bytes(b"leftover")
+    stale = time.time() - 7200
+
+    real_stat = Path.stat
+    calls = {"n": 0}
+
+    def fake_stat(self, *args, **kwargs):
+        if self == target:
+            calls["n"] += 1
+            # 1st stat (candidate collection): stale, so it qualifies.
+            # 2nd stat (pre-unlink re-stat): fresh, as if just rewritten.
+            return types.SimpleNamespace(st_mtime=stale if calls["n"] == 1 else time.time())
+        return real_stat(self, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "stat", fake_stat)
+    removed = cache.evict_orphans(min_age_seconds=3600)
+
+    assert removed == 0
+    assert target.exists()
+
+
+def test_cleanup_empty_dirs_refuses_base_dir_and_outside(cache, tmp_path) -> None:
+    base = cache._base_dir
+    base.mkdir(parents=True, exist_ok=True)
+    outside = tmp_path / "outside_empty"
+    outside.mkdir()
+
+    cache._cleanup_empty_dirs({base, outside})
+
+    assert base.exists()      # never removes base_dir itself
+    assert outside.exists()   # never removes a dir outside the cache tree
 
 
 def test_evict_by_size_sweeps_orphans_first(cache) -> None:
