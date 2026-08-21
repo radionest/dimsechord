@@ -336,3 +336,29 @@ def test_evict_by_size_sweeps_orphans_first(cache) -> None:
     removed = cache.evict_by_size()       # cache well under budget → only the orphan
     assert removed == 1
     assert not orphan.exists()
+
+
+def test_evict_by_size_does_not_resweep_orphans_within_an_hour(cache, monkeypatch) -> None:
+    base = cache._base_dir
+    d = base / "OS" / "OR"
+    d.mkdir(parents=True)
+    orphan = d / "ORPHAN.dcm"
+    orphan.write_bytes(b"x")
+    stale = time.time() - 7200
+    os.utime(orphan, (stale, stale))
+
+    calls = {"n": 0}
+    real_evict_orphans = cache.evict_orphans
+
+    def spy_evict_orphans(*args, **kwargs):
+        calls["n"] += 1
+        return real_evict_orphans(*args, **kwargs)
+
+    monkeypatch.setattr(cache, "evict_orphans", spy_evict_orphans)
+
+    first = cache.evict_by_size()
+    second = cache.evict_by_size()
+
+    assert first == 1
+    assert second == 0
+    assert calls["n"] == 1  # second evict_by_size() call did not re-sweep orphans

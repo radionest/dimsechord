@@ -16,6 +16,7 @@ import logging
 import queue
 import threading
 import time
+import warnings
 from contextlib import aclosing
 from typing import TYPE_CHECKING
 from weakref import WeakValueDictionary
@@ -53,6 +54,10 @@ logger = logging.getLogger(__name__)
 # timeout, not at abort; the short join covers the already-finishing case,
 # the reaper covers the rest.
 _ABORT_JOIN_TIMEOUT = 2.0
+
+# Default for the retained-but-inert cmove_timeout kwarg; a non-default value
+# triggers the deprecation warning in PullEngine.__init__.
+_CMOVE_TIMEOUT_DEFAULT = 300.0
 
 
 class _MoveToSelfTransport:
@@ -309,11 +314,25 @@ class PullEngine:
         max_pdu: int = 16384,
         # Retained for compatibility; since 0.8.0 cancellation is abort-based
         # (move_lease_timeout + arrival_timeout + the fixed abort join).
-        cmove_timeout: float = 300.0,
+        cmove_timeout: float = _CMOVE_TIMEOUT_DEFAULT,
         arrival_timeout: float = 60.0,
         completion_grace: float = 5.0,
         move_lease_timeout: float = 5.0,
     ) -> None:
+        """Build a cache-filling engine that retrieves via C-MOVE-to-self.
+
+        ``move_lease_timeout`` bounds two separate waits: move-slot
+        acquisition from the association pool, and the same-key coalescing
+        wait (shared with ``via_cget``).
+        """
+        if cmove_timeout != _CMOVE_TIMEOUT_DEFAULT:
+            warnings.warn(
+                "cmove_timeout no longer bounds anything since 0.8.0 — "
+                "cancellation is abort-based; see move_lease_timeout and "
+                "arrival_timeout instead.",
+                DeprecationWarning,
+                stacklevel=2,
+            )
         self._init(
             _MoveToSelfTransport(
                 pool=pool,
@@ -350,12 +369,12 @@ class PullEngine:
         calling_aet: str,
         max_pdu: int = 16384,
         cget_timeout: float = 300.0,
-        move_lease_timeout: float = 5.0,
+        coalesce_timeout: float = 5.0,
     ) -> PullEngine:
         """Build a cache-filling engine that retrieves via C-GET (no pool/SCP).
 
-        ``move_lease_timeout`` bounds only the same-key coalescing wait here —
-        a C-GET engine has no association pool to lease from.
+        ``coalesce_timeout`` bounds the same-key coalescing wait — a C-GET
+        engine has no move and no association-pool lease to bound.
         """
         eng = cls.__new__(cls)
         eng._init(
@@ -366,7 +385,7 @@ class PullEngine:
                 cget_timeout=cget_timeout,
             ),
             cache,
-            move_lease_timeout,
+            coalesce_timeout,
         )
         return eng
 

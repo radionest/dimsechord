@@ -2,6 +2,7 @@
 
 import threading
 import time
+import warnings
 
 import pytest
 
@@ -19,7 +20,7 @@ def test_cget_engine_coalescing_bound(tmp_path) -> None:
     cache = DicomCache(base_dir=tmp_path / "cache", index_path=tmp_path / "index.db")
     eng = PullEngine.via_cget(
         cache, DicomNode(aet="P", host="127.0.0.1", port=104),
-        calling_aet="GETTER", move_lease_timeout=0.2,
+        calling_aet="GETTER", coalesce_timeout=0.2,
     )
     lock = eng._get_lock("S/X")  # the exact key iter_series("S", "X") computes
     assert lock.acquire(timeout=1)
@@ -30,6 +31,31 @@ def test_cget_engine_coalescing_bound(tmp_path) -> None:
         assert time.monotonic() - start < 1.0
     finally:
         lock.release()
+        cache.shutdown()
+
+
+def test_cmove_timeout_override_warns_deprecated(tmp_path) -> None:
+    cache = DicomCache(base_dir=tmp_path / "cache", index_path=tmp_path / "index.db")
+    pool = AssociationPool(aets=["DEPWARN"])
+    scp = StorageSCP()
+    pacs = DicomNode(aet="PACS", host="127.0.0.1", port=104)
+    try:
+        with pytest.warns(DeprecationWarning, match="cmove_timeout"):
+            PullEngine(pool=pool, scp=scp, cache=cache, pacs=pacs, cmove_timeout=60.0)
+    finally:
+        cache.shutdown()
+
+
+def test_cmove_timeout_default_does_not_warn(tmp_path) -> None:
+    cache = DicomCache(base_dir=tmp_path / "cache", index_path=tmp_path / "index.db")
+    pool = AssociationPool(aets=["DEPWARN2"])
+    scp = StorageSCP()
+    pacs = DicomNode(aet="PACS", host="127.0.0.1", port=104)
+    try:
+        with warnings.catch_warnings():
+            warnings.simplefilter("error")
+            PullEngine(pool=pool, scp=scp, cache=cache, pacs=pacs)
+    finally:
         cache.shutdown()
 
 

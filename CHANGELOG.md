@@ -18,9 +18,9 @@ production queue collapse where one slow upstream C-MOVE blocked clients for
   retrieved and no coalescing slot frees within `move_lease_timeout`.
   Subclasses `PoolExhaustedError`, so existing handlers that map pool
   exhaustion to a retry-later DIMSE status (0xA702) catch it unchanged.
-- `PullEngine(move_lease_timeout=…)` / `PullEngine.via_cget(move_lease_timeout=…)`
-  — bounds move-slot acquisition and the same-key coalescing wait (C-GET
-  engines: coalescing only).
+- `PullEngine(move_lease_timeout=…)` bounds move-slot acquisition and the
+  same-key coalescing wait; `PullEngine.via_cget(coalesce_timeout=…)` bounds
+  coalescing only — a C-GET engine has no move to lease.
 - `StorageSCP(maximum_associations=…)` (default 25, previously pynetdicom's
   implicit 10) and `StorageSCP(session_queue_maxsize=…)` (default 64) — the
   per-session streaming queue is now bounded, applying C-STORE backpressure
@@ -31,7 +31,8 @@ production queue collapse where one slow upstream C-MOVE blocked clients for
   `session_queue_maxsize` accordingly.
 - `DicomCache.evict_orphans(min_age_seconds=3600)` — sweeps `.dcm` files left
   on disk without index rows (crash mid-tee); also runs inside
-  `evict_by_size()`, so existing eviction timers pick it up.
+  `evict_by_size()` at most once per hour, so existing eviction timers pick
+  it up.
 
 ### Changed
 

@@ -42,6 +42,7 @@ class MemoryCachedSeries:
 
 _INSTANCE_OVERHEAD_BYTES = 16 * 1024
 _PIXEL_KEYWORDS = ("PixelData", "FloatPixelData", "DoubleFloatPixelData")
+_ORPHAN_SWEEP_INTERVAL_SECONDS = 3600.0
 
 
 def _series_size_bytes(entry: MemoryCachedSeries) -> int:
@@ -90,6 +91,7 @@ class DicomCache:
         )
         self._pending: set[Future[None]] = set()
         self._pending_lock = threading.Lock()
+        self._last_orphan_sweep = 0.0
 
     def _key(self, study_uid: str, series_uid: str) -> str:
         return f"{study_uid}/{series_uid}"
@@ -345,7 +347,16 @@ class DicomCache:
         return removed
 
     def evict_by_size(self) -> int:
-        removed = self.evict_orphans()
+        """Evict LRU instances over the size budget.
+
+        Also sweeps orphans (``evict_orphans()``), but at most once per hour —
+        a direct ``evict_orphans()`` call is never throttled by this stamp.
+        """
+        removed = 0
+        now = time.time()
+        if now - self._last_orphan_sweep >= _ORPHAN_SWEEP_INTERVAL_SECONDS:
+            removed += self.evict_orphans()
+            self._last_orphan_sweep = now
         removed += self._remove_rows(self._index.lru_over_size(self._max_size_bytes))
         if removed:
             logger.info(f"Evicted {removed} cache instances by size")
