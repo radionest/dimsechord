@@ -48,9 +48,16 @@ implementations.
   same-key coalescing wait, so a retrieve fails fast instead of queuing;
   the coalescing wait raises `RetrieveBusyError`, a `PoolExhaustedError`
   subclass. A move-slot lease is released only after the driver thread has
-  exited — via a reaper thread when it outlives the 2 s abort join — never
-  while it may still be alive, so a re-leased AET can never receive a dying
-  move's stray C-STOREs into a fresh session.
+  exited — via a reaper thread when it outlives the 2 s abort join (a
+  cross-thread `Association.abort()` cannot wake a driver parked in the
+  DIMSE receive; that wait only resolves at `dimse_timeout`, default 30 s,
+  per pynetdicom 3.0.4) — never while it may still be alive, so a re-leased
+  AET can never receive a dying move's stray C-STOREs into a fresh session;
+  if the reaper itself fails to start, the slot is deliberately leaked (with
+  an error log) rather than released. With N > 1 pooled AETs the guarantee
+  is per-AET only: a same-key retry through a different AET can still catch
+  a dying move's last in-flight C-STORE — certification stays safe, worst
+  case one duplicated instance mid-stream.
 - `DicomCache` (`_cache.py`) — two-tier (memory + disk) backed by a SQLite
   index; background disk writes run on a `ThreadPoolExecutor` so the same
   cache instance is safe to use from both the asyncio HTTP face and the
