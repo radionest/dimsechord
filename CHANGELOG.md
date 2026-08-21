@@ -3,11 +3,14 @@
 ## 0.8.0 — UNRELEASED
 
 Every wait on the C-MOVE-to-self retrieve path is now short and bounded: no
-free move slot, or a same-series fetch already in flight, fails in
-`move_lease_timeout` (default 5 s) with a typed error instead of queuing for
-minutes; an abandoned move aborts the upstream association instead of being
-joined for up to `cmove_timeout`. Motivated by a production queue collapse
-where one slow upstream C-MOVE blocked clients for 8–11 minutes.
+free move slot, or a same-series fetch already in flight, fails fast instead
+of queuing for minutes. Each wait — same-key coalescing, then move-slot
+acquisition — is bounded by `move_lease_timeout` (default 5 s) and raises a
+typed error; the two are sequential, so a retrieve crosses at most two such
+waits, worst-case ~2x the knob. An abandoned move aborts the upstream
+association instead of being joined for up to `cmove_timeout`. Motivated by a
+production queue collapse where one slow upstream C-MOVE blocked clients for
+8–11 minutes.
 
 ### Added
 
@@ -21,7 +24,11 @@ where one slow upstream C-MOVE blocked clients for 8–11 minutes.
 - `StorageSCP(maximum_associations=…)` (default 25, previously pynetdicom's
   implicit 10) and `StorageSCP(session_queue_maxsize=…)` (default 64) — the
   per-session streaming queue is now bounded, applying C-STORE backpressure
-  to a PACS that outruns the consumer.
+  to a PACS that outruns the consumer. If a live consumer stalls long enough
+  for the bounded queue to park the C-STORE handler past the PACS's own
+  DIMSE timeout, the PACS may abort and the retrieve fails with
+  `AssociationError` (0.7.0's unbounded queue absorbed this lag); size
+  `session_queue_maxsize` accordingly.
 - `DicomCache.evict_orphans(min_age_seconds=3600)` — sweeps `.dcm` files left
   on disk without index rows (crash mid-tee); also runs inside
   `evict_by_size()`, so existing eviction timers pick it up.
@@ -36,7 +43,8 @@ where one slow upstream C-MOVE blocked clients for 8–11 minutes.
   `RetrieveBusyError` immediately.
 - An abandoned retrieve (client disconnect, HTTP cancel, arrival timeout)
   aborts the in-flight upstream C-MOVE association: the consumer unblocks
-  within ~2 s, the upstream stops sending immediately, and the move slot
+  within ~2 s, the upstream stops sending as soon as it notices the aborted
+  association (typically its next sub-operation), and the move slot
   returns as soon as the driver thread exits — bounded by the DIMSE timeout
   (default 30 s) instead of the full move duration. The slot is never
   released while the driver thread lives, so a re-leased AET cannot receive

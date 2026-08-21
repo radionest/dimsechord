@@ -320,9 +320,14 @@ its queue bound. The bound is per-bridge, not end-to-end: pynetdicom's DUL
 thread still reads incoming PDUs at line speed into an unbounded internal
 queue, so it caps this library's buffering, not the peer's send rate.
 Closing the async generator early
-aborts the upstream association instead of draining the remaining responses:
-an explicit `aclose()` releases the pool lease before it returns, while a
-merely abandoned generator is finalized by the event loop shortly after.
+aborts the upstream association instead of draining the remaining responses.
+For `stream_find`, an explicit `aclose()` releases the find lease before it
+returns; for `PullEngine`'s `stream_series`/`stream_study`, `aclose()` aborts
+the upstream move and returns after a bounded 2 s join, but the move slot
+itself is released only once the driver thread exits — immediately if the
+join succeeds, otherwise bounded by the DIMSE timeout (default 30 s) via a
+reaper thread. A merely abandoned generator is finalized by the event loop
+shortly after either way.
 
 If the deployment opted into a global cap via
 `DicomClient.set_max_concurrent_associations`, that permit is held for the
@@ -423,7 +428,8 @@ except DimsechordError:
 | --- | --- |
 | `AssociationError` | an association fails (including a peer that refuses a needed presentation context — the typed face requires Study Root Q/R), or a C-GET/C-STORE/C-MOVE sub-operation fails — including a C-MOVE or C-GET that ends on a non-success status, or a C-MOVE that under-delivers |
 | `FindFailedError` | a raw streaming C-FIND (`iter_find`/`stream_find`) ends with a non-success DIMSE status |
-| `PoolExhaustedError` | `AssociationPool.lease`, used directly — or `lease_find`, on the first iteration of `iter_find`/`stream_find` — times out with no free slot; a `PullEngine` retrieve raises it (as `RetrieveBusyError`) when move-slot acquisition or same-key coalescing exceeds `move_lease_timeout` |
+| `PoolExhaustedError` | `AssociationPool.lease`, used directly — or `lease_find`, on the first iteration of `iter_find`/`stream_find` — times out with no free slot; a `PullEngine` retrieve raises it directly when move-slot acquisition itself exceeds `move_lease_timeout` |
+| `RetrieveBusyError` | a `PullEngine` retrieve's same-key coalescing wait finds no free slot within `move_lease_timeout` — the same series/study is already being retrieved elsewhere; subclasses `PoolExhaustedError` |
 | `MoveToSelfError` | a C-MOVE completes reporting zero sub-operations — the query matched nothing (under-delivery/misrouting is `AssociationError`) |
 | `ArrivalTimeoutError` | no instance arrives within the configured `arrival_timeout` |
 | `NoPresentationContextError` | `StoreSession.store` found no accepted presentation context for the dataset — the association stays usable; nothing was sent |

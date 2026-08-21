@@ -75,4 +75,6 @@ implementations.
 - `StorageSCP` (`_scp.py`) — a persistent Storage SCP whose C-STORE
   handler pushes received instances onto a bounded per-session queue
   (`session_queue_maxsize`, default 64) that `PullEngine` streams from,
-  applying backpressure to a PACS that outruns the consumer.
+  applying backpressure to a PACS that outruns the consumer. Accepts up to
+  `maximum_associations` concurrent associations (default 25, explicit —
+  previously pynetdicom's implicit 10).

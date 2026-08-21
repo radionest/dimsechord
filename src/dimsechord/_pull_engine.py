@@ -195,7 +195,7 @@ class _MoveToSelfTransport:
         self,
         scp_key: str,
         request: RetrieveRequest,
-        error_holder: list,
+        error_holder: list[Exception],
         aet: str,
         abort_handle: MoveAbortHandle,
     ) -> None:
