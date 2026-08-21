@@ -27,7 +27,7 @@ def engine(fake_pacs, free_port, tmp_path):
     pacs = DicomNode(aet=fake_pacs.aet, host="127.0.0.1", port=fake_pacs.port)
     eng = PullEngine(
         pool=pool, scp=scp, cache=cache, pacs=pacs,
-        cmove_timeout=60.0, arrival_timeout=30.0,
+        arrival_timeout=30.0,
     )
     try:
         yield eng, cache
@@ -108,7 +108,6 @@ def test_real_move_failure_raises_association_error(free_port, tmp_path) -> None
         scp=scp,
         cache=cache,
         pacs=pacs,
-        cmove_timeout=5.0,
         arrival_timeout=5.0,
     )
     try:
@@ -180,7 +179,7 @@ def test_move_arrival_shortfall_not_marked_complete(monkeypatch, free_port, tmp_
     pacs = DicomNode(aet="PACS", host="127.0.0.1", port=free_port())
     eng = PullEngine(
         pool=pool, scp=scp, cache=cache, pacs=pacs,
-        cmove_timeout=5.0, arrival_timeout=5.0, completion_grace=0.5,
+        arrival_timeout=5.0, completion_grace=0.5,
     )
 
     def fake_move(self, config, request, destination_aet, *, abort_handle=None):  # noqa: ARG001
@@ -318,7 +317,7 @@ def test_orphaned_move_driver_not_certified_complete(monkeypatch, free_port, tmp
     pacs = DicomNode(aet="PACS", host="127.0.0.1", port=free_port())
     eng = PullEngine(
         pool=pool, scp=scp, cache=cache, pacs=pacs,
-        cmove_timeout=0.5, arrival_timeout=30.0,
+        arrival_timeout=30.0,
     )
 
     release = threading.Event()
@@ -454,7 +453,7 @@ def test_reaper_start_failure_leaks_slot_but_preserves_original_error(
     pacs = DicomNode(aet="PACS", host="127.0.0.1", port=free_port())
     eng = PullEngine(
         pool=pool, scp=scp, cache=cache, pacs=pacs,
-        cmove_timeout=0.5, arrival_timeout=30.0,
+        arrival_timeout=30.0,
     )
 
     release = threading.Event()
