@@ -82,6 +82,12 @@ async def main() -> None:
 asyncio.run(main())
 ```
 
+> **0.8.0:** every wait on the C-MOVE-to-self retrieve path is now short and
+> bounded, failing with a typed error instead of queuing for minutes — the
+> new `RetrieveBusyError` (a `PoolExhaustedError` subclass) covers same-key
+> coalescing. An abandoned move is aborted upstream immediately; its slot
+> returns once the driver thread exits.
+
 > **0.7.0:** `StoreSession` is a persistent C-STORE SCU session with verbatim
 > DIMSE status pass-through — success, warning, and failure codes all return
 > as an `int`, never raised. A presentation-context miss raises the new

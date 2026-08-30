@@ -15,6 +15,9 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from pathlib import Path
 
+# Chunk size for batched write operations (under SQLite's default 999-variable limit)
+_SQL_CHUNK = 500
+
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS instances (
     sop_uid       TEXT PRIMARY KEY,
@@ -203,23 +206,66 @@ class CacheIndex:
 
     def lru_over_size(self, max_size_bytes: int) -> list[IndexedInstance]:
         with self._lock:
-            cur = self._conn.execute(
-                "SELECT * FROM instances ORDER BY last_accessed ASC"
-            )
-            rows = [_row(r) for r in cur.fetchall()]
-        total = sum(r.size for r in rows)
-        victims: list[IndexedInstance] = []
-        for r in rows:
-            if total <= max_size_bytes:
-                break
-            victims.append(r)
-            total -= r.size
-        return victims
+            cur = self._conn.execute("SELECT COALESCE(SUM(size), 0) AS total FROM instances")
+            overage = int(cur.fetchone()["total"]) - max_size_bytes
+            if overage <= 0:
+                return []
+            victims: list[IndexedInstance] = []
+            freed = 0
+            # Streaming cursor over idx_last_accessed: only the victims are
+            # materialized, never the whole table.
+            for r in self._conn.execute("SELECT * FROM instances ORDER BY last_accessed ASC"):
+                victims.append(_row(r))
+                freed += int(r["size"])
+                if freed >= overage:
+                    break
+            return victims
 
     def delete(self, sop_uid: str) -> None:
         with self._lock:
             self._conn.execute("DELETE FROM instances WHERE sop_uid = ?", (sop_uid,))
             self._conn.commit()
+
+    def delete_many(self, sop_uids: list[str]) -> None:
+        with self._lock:
+            for i in range(0, len(sop_uids), _SQL_CHUNK):
+                chunk = sop_uids[i : i + _SQL_CHUNK]
+                placeholders = ",".join("?" * len(chunk))
+                self._conn.execute(
+                    f"DELETE FROM instances WHERE sop_uid IN ({placeholders})", chunk
+                )
+                self._conn.commit()
+
+    def touch_many(self, sop_uids: list[str], now: float | None = None) -> None:
+        ts = time.time() if now is None else now
+        with self._lock:
+            for i in range(0, len(sop_uids), _SQL_CHUNK):
+                chunk = sop_uids[i : i + _SQL_CHUNK]
+                placeholders = ",".join("?" * len(chunk))
+                self._conn.execute(
+                    f"UPDATE instances SET last_accessed = ? WHERE sop_uid IN ({placeholders})",
+                    [ts, *chunk],
+                )
+                self._conn.commit()
+
+    def clear_series_complete_many(self, keys: list[tuple[str, str]]) -> None:
+        with self._lock:
+            self._conn.executemany(
+                "DELETE FROM series_complete WHERE study_uid = ? AND series_uid = ?", keys
+            )
+            self._conn.commit()
+
+    def existing_file_paths(self, sop_uids: list[str]) -> set[str]:
+        found: set[str] = set()
+        with self._lock:
+            for i in range(0, len(sop_uids), _SQL_CHUNK):
+                chunk = sop_uids[i : i + _SQL_CHUNK]
+                placeholders = ",".join("?" * len(chunk))
+                cur = self._conn.execute(
+                    f"SELECT file_path FROM instances WHERE sop_uid IN ({placeholders})", chunk
+                )
+                found.update(r["file_path"] for r in cur.fetchall())
+        return found
 
     def close(self) -> None:
         with self._lock:

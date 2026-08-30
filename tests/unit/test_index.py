@@ -144,3 +144,60 @@ def test_schema_migrates_pre_existing_db(tmp_path) -> None:
     assert idx.series_expected_count("ST1", "S1") is None
     idx.mark_series_complete("ST1", "S1", 2)
     assert idx.series_expected_count("ST1", "S1") == 2
+
+
+def _seed(idx: CacheIndex, n: int, *, size: int = 10) -> list[str]:
+    uids = [f"U{i}" for i in range(n)]
+    for i, uid in enumerate(uids):
+        idx.upsert(IndexedInstance(
+            study_uid="S", series_uid="R", sop_uid=uid, file_path=f"/f/{uid}",
+            size=size, cached_at=float(i), last_accessed=float(i), source="pacs",
+        ))
+    return uids
+
+
+def test_delete_many_removes_rows_with_chunked_commits() -> None:
+    idx = CacheIndex(":memory:")
+    uids = _seed(idx, 1200)
+    statements: list[str] = []
+    idx._conn.set_trace_callback(statements.append)
+    idx.delete_many(uids)
+    idx._conn.set_trace_callback(None)
+    commits = [s for s in statements if s.strip().upper().startswith("COMMIT")]
+    assert len(commits) == 3  # ceil(1200 / 500)
+    assert idx.total_size() == 0
+
+
+def test_touch_many_updates_all_with_one_commit_per_chunk() -> None:
+    idx = CacheIndex(":memory:")
+    uids = _seed(idx, 400)
+    statements: list[str] = []
+    idx._conn.set_trace_callback(statements.append)
+    idx.touch_many(uids, now=9999.0)
+    idx._conn.set_trace_callback(None)
+    commits = [s for s in statements if s.strip().upper().startswith("COMMIT")]
+    assert len(commits) == 1
+    assert all(r.last_accessed == 9999.0 for r in idx.get_series("S", "R"))
+
+
+def test_existing_file_paths_partitions_candidates() -> None:
+    idx = CacheIndex(":memory:")
+    uids = _seed(idx, 5)
+    expected = {f"/f/{u}" for u in uids[:3]}
+    assert idx.existing_file_paths([*uids[:3], "MISSING1", "MISSING2"]) == expected
+
+
+def test_clear_series_complete_many() -> None:
+    idx = CacheIndex(":memory:")
+    idx.mark_series_complete("S1", "R1", 1)
+    idx.mark_series_complete("S2", "R2", 1)
+    idx.clear_series_complete_many([("S1", "R1"), ("S2", "R2")])
+    assert idx.series_expected_count("S1", "R1") is None
+    assert idx.series_expected_count("S2", "R2") is None
+
+
+def test_lru_over_size_does_not_materialize_full_table() -> None:
+    idx = CacheIndex(":memory:")
+    _seed(idx, 1000, size=10)  # total 10_000
+    victims = idx.lru_over_size(max_size_bytes=9_950)  # overage 50 → 5 oldest
+    assert [v.sop_uid for v in victims] == [f"U{i}" for i in range(5)]

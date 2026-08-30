@@ -39,6 +39,7 @@ EXPECTED_PUBLIC = {
     "PullEngine",
     "QueryEngine",
     "QueryRetrieveLevel",
+    "RetrieveBusyError",
     "RetrieveResult",
     "SeriesQuery",
     "SeriesResult",

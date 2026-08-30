@@ -1,5 +1,72 @@
 # Changelog
 
+## 0.8.0 — UNRELEASED
+
+Every wait on the C-MOVE-to-self retrieve path is now short and bounded: no
+free move slot, or a same-series fetch already in flight, fails fast instead
+of queuing for minutes. Each wait — same-key coalescing, then move-slot
+acquisition — is bounded by `move_lease_timeout` (default 5 s) and raises a
+typed error; the two are sequential, so a retrieve crosses at most two such
+waits, worst-case ~2x the knob. An abandoned move aborts the upstream
+association instead of being joined for up to `cmove_timeout`. Motivated by a
+production queue collapse where one slow upstream C-MOVE blocked clients for
+8–11 minutes.
+
+### Added
+
+- `RetrieveBusyError` — raised when the same series/study is already being
+  retrieved and no coalescing slot frees within `move_lease_timeout`.
+  Subclasses `PoolExhaustedError`, so existing handlers that map pool
+  exhaustion to a retry-later DIMSE status (0xA702) catch it unchanged.
+- `PullEngine(move_lease_timeout=…)` bounds move-slot acquisition and the
+  same-key coalescing wait; `PullEngine.via_cget(coalesce_timeout=…)` bounds
+  coalescing only — a C-GET engine has no move to lease.
+- `StorageSCP(maximum_associations=…)` (default 25, previously pynetdicom's
+  implicit 10) and `StorageSCP(session_queue_maxsize=…)` (default 64) — the
+  per-session streaming queue is now bounded, applying C-STORE backpressure
+  to a PACS that outruns the consumer. If a live consumer stalls long enough
+  for the bounded queue to park the C-STORE handler past the PACS's own
+  DIMSE timeout, the PACS may abort and the retrieve fails with
+  `AssociationError` (0.7.0's unbounded queue absorbed this lag); size
+  `session_queue_maxsize` accordingly.
+- `DicomCache.evict_orphans(min_age_seconds=3600)` — sweeps `.dcm` files left
+  on disk without index rows (crash mid-tee); also runs inside
+  `evict_by_size()` at most once per hour, so existing eviction timers pick
+  it up.
+
+### Changed
+
+- **Breaking (behavior):** retrieves fail fast. The move slot is leased in
+  `stream()` before any upstream work with `move_lease_timeout` (was: inside
+  the driver thread with `timeout=cmove_timeout`, ~300 s), and the per-key
+  coalescing locks no longer wait forever. Callers that relied on requests
+  queuing behind a slow fetch now receive `PoolExhaustedError` /
+  `RetrieveBusyError` immediately.
+- An abandoned retrieve (client disconnect, HTTP cancel, arrival timeout)
+  aborts the in-flight upstream C-MOVE association: the consumer unblocks
+  within ~2 s, the upstream stops sending as soon as it notices the aborted
+  association (typically its next sub-operation), and the move slot
+  returns as soon as the driver thread exits — bounded by the DIMSE timeout
+  (default 30 s) instead of the full move duration. The slot is never
+  released while the driver thread lives, so a re-leased AET cannot receive
+  a dying move's stray C-STOREs. `cmove_timeout` is retained for API
+  compatibility but no longer bounds the consumer join; cancellation is
+  abort-based.
+- `MoveSession` buffers once: streaming sessions (PullEngine) deliver through
+  the bounded queue and no longer duplicate every instance into
+  `MoveSession.instances`; collect sessions (`retrieve_via_move`) retain
+  instances and no longer enqueue.
+
+### Fixed
+
+- Eviction and series reads no longer commit per row: LRU victim selection
+  streams from a SQL cursor instead of loading the whole table, deletes and
+  `last_accessed` updates are chunk-batched (a 1931-instance series read was
+  1931 commits; now 1 per 500).
+- C-STOREs arriving for an abandoned move no longer pile into a dead
+  session's unbounded queue ("unregistered session" storm): the abort stops
+  the flow at the source and a full queue on an ended session drops.
+
 ## 0.7.0 — 2026-07-24
 
 The typed Q/R face now speaks the Study Root information model exclusively

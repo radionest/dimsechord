@@ -56,7 +56,7 @@ def test_pool_three_aets_each_on_own_port(free_port, tmp_path) -> None:
     pacs_node = DicomNode(aet=pacs.aet, host="127.0.0.1", port=pacs_port)
     eng = PullEngine(
         pool=pool, scp=scp, cache=cache, pacs=pacs_node,
-        cmove_timeout=60.0, arrival_timeout=30.0,
+        arrival_timeout=30.0,
     )
     try:
         # Sequential retrievals round-robin the pool (A, B, C); each leased AET is

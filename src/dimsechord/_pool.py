@@ -24,6 +24,29 @@ class _PooledAet:
     find_semaphore: threading.Semaphore
 
 
+class _MoveLease:
+    """One leased move slot. ``release`` is idempotent and thread-safe.
+
+    Exists so release responsibility can outlive the acquiring frame: the pull
+    engine must not free a slot until the move's driver thread has exited (a
+    re-leased AET must not admit a fresh fetch while the previous move may
+    still be pushing C-STOREs).
+    """
+
+    def __init__(self, aet: str, semaphore: threading.Semaphore) -> None:
+        self.aet = aet
+        self._semaphore = semaphore
+        self._released = False
+        self._lock = threading.Lock()
+
+    def release(self) -> None:
+        with self._lock:
+            if self._released:
+                return
+            self._released = True
+        self._semaphore.release()
+
+
 class AssociationPool:
     """A pool of AET identities with independent move and find caps.
 
@@ -94,14 +117,19 @@ class AssociationPool:
             )
         return pooled
 
+    def _acquire_move(self, timeout: float | None = None) -> _MoveLease:
+        """Acquire one move slot; the caller owns release (idempotent handle)."""
+        pooled = self._acquire(timeout, "move")
+        return _MoveLease(pooled.aet, pooled.move_semaphore)
+
     @contextmanager
     def lease(self, timeout: float | None = None) -> Iterator[str]:
         """Lease one AET for a C-MOVE-to-self for the duration of the block."""
-        pooled = self._acquire(timeout, "move")
+        lease = self._acquire_move(timeout)
         try:
-            yield pooled.aet
+            yield lease.aet
         finally:
-            pooled.move_semaphore.release()
+            lease.release()
 
     @contextmanager
     def lease_find(self, timeout: float | None = None) -> Iterator[str]:

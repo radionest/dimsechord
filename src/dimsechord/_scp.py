@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import logging
 import queue
 import threading
@@ -23,9 +24,13 @@ logger = logging.getLogger(__name__)
 class MoveSession:
     """Tracks instances received for a single C-MOVE request.
 
-    ``queue`` streams ``(sop_uid, dataset)`` as each C-STORE arrives; a ``None``
-    sentinel (via ``signal_end``) marks end-of-stream. ``instances`` retains the
-    full set for non-streaming callers.
+    Supports two modes: streaming or collect. Streaming sessions (``collect=False``)
+    deliver instances via a bounded queue ``maxsize``; ``instances`` is never populated.
+    ``queue`` streams ``(sop_uid, dataset)`` as each C-STORE arrives, and a ``None``
+    sentinel (via ``signal_end``) marks end-of-stream. Collect sessions (``collect=True``)
+    retain all instances in ``instances`` instead; the queue is unbounded and never
+    populated — ``signal_end``/``stop`` skip the sentinel push for these sessions, since
+    there is no queue consumer on the collect path to receive it.
     """
 
     instances: dict[str, Dataset] = field(default_factory=dict)
@@ -34,12 +39,20 @@ class MoveSession:
     received_count: int = 0
     done: threading.Event = field(default_factory=threading.Event)
     ended: bool = False
+    collect: bool = False
+    finished: bool = False
 
 
 class StorageSCP:
     """Persistent pynetdicom Storage SCP that feeds per-session streaming queues."""
 
-    def __init__(self, supported_transfer_syntaxes: Sequence[str] = ALL_TRANSFER_SYNTAXES) -> None:
+    def __init__(
+        self,
+        supported_transfer_syntaxes: Sequence[str] = ALL_TRANSFER_SYNTAXES,
+        *,
+        maximum_associations: int = 25,
+        session_queue_maxsize: int = 64,
+    ) -> None:
         """Args:
         supported_transfer_syntaxes: Transfer syntaxes every storage context
             accepts (default: all pynetdicom knows). Supported contexts are
@@ -47,8 +60,16 @@ class StorageSCP:
             there is no 128-context limit on the accept side. Accepting all
             syntaxes lets the upstream PACS send compressed objects verbatim
             instead of failing sub-operations or transcoding.
+        maximum_associations: Maximum concurrent associations per AE (default: 25).
+            Bounds incoming connection capacity and is set on each per-port AE
+            before the server starts.
+        session_queue_maxsize: Bounded queue size for streaming sessions (default: 64).
+            Gives per-move backpressure by capping the instances queued before
+            receive blocks; collect sessions ignore this and use unbounded queues.
         """
         self._supported_transfer_syntaxes = list(supported_transfer_syntaxes)
+        self._maximum_associations = maximum_associations
+        self._session_queue_maxsize = session_queue_maxsize
         self._servers: list[Any] = []
         self._aes: list[Any] = []
         self._sessions: dict[str, MoveSession] = {}
@@ -85,6 +106,7 @@ class StorageSCP:
             for port, aets in by_port.items():
                 ae = AE(ae_title=aets[0])
                 ae.require_called_aet = False
+                ae.maximum_associations = self._maximum_associations
                 for ctx in StoragePresentationContexts:
                     if ctx.abstract_syntax is not None:
                         ae.add_supported_context(
@@ -108,16 +130,40 @@ class StorageSCP:
         self._servers.clear()
         self._aes.clear()
         with self._lock:
-            for session in self._sessions.values():
+            sessions = list(self._sessions.values())
+            for session in sessions:
                 session.ended = True
+                session.finished = True
                 session.done.set()
-                session.queue.put(None)
             self._sessions.clear()
+        # Best-effort sentinels outside the lock: a bounded queue must never stall
+        # shutdown, and by now nothing certifies these sessions complete anyway.
+        for session in sessions:
+            if not session.collect:
+                with contextlib.suppress(queue.Full):  # waiters exit via the ended flag
+                    session.queue.put_nowait(None)
         logger.info("Storage SCP stopped")
 
     # ── Session management ────────────────────────────────────────
-    def register_session(self, key: str) -> MoveSession:
-        session = MoveSession()
+    def register_session(self, key: str, *, collect: bool = False) -> MoveSession:
+        """Register a C-MOVE session.
+
+        Args:
+            key: Session identifier (typically study_uid/series_uid).
+            collect: If True, instances are retained in ``instances`` dict and the
+                queue is unbounded; if False (default), instances stream via a
+                bounded queue and ``instances`` stays empty.
+
+        Returns:
+            A MoveSession configured for the specified mode.
+
+        Raises:
+            RuntimeError: If a session with this key is already active.
+        """
+        session = MoveSession(
+            queue=queue.Queue(maxsize=0 if collect else self._session_queue_maxsize),
+            collect=collect,
+        )
         with self._lock:
             if key in self._sessions:
                 raise RuntimeError(f"C-MOVE session already active for key={key}")
@@ -161,11 +207,14 @@ class StorageSCP:
                 return
             session.ended = True
             session.done.set()
-        session.queue.put(None)
+        if not session.collect:
+            self._put_bounded(session, None, sentinel=True)
 
     def finish_session(self, key: str) -> MoveSession | None:
         with self._lock:
             session = self._sessions.pop(key, None)
+            if session is not None:
+                session.finished = True
         if session is not None:
             logger.debug(
                 f"Finished C-MOVE session: {key} (received {session.received_count} instances)"
@@ -189,23 +238,58 @@ class StorageSCP:
                         f"study={study_uid}, series={series_uid}"
                     )
                     return 0x0000
-                session.instances[sop_uid] = ds
-                session.received_count += 1
-                # Enqueue before signalling completion: ``done`` firing lets the driver's
-                # ``wait_for_completion`` return and run ``signal_end``, pushing the None
-                # sentinel — which must never overtake this item, or the consumer breaks
-                # having yielded N-1 of N and certifies a short series. The queue is
-                # thread-safe and unbounded (put never blocks), so it is safe under the lock.
-                session.queue.put((sop_uid, ds))
-                if (
-                    session.expected_count is not None
-                    and session.received_count >= session.expected_count
-                ):
-                    session.done.set()
+                if session.collect:
+                    session.instances[sop_uid] = ds
+                    self._count_received(session)
+                    return 0x0000
+
+            # Streaming: bounded put OUTSIDE the registry lock — one full queue
+            # must never stall other sessions. Count only after the item is
+            # queued, so ``done`` (and thus the end sentinel via
+            # ``wait_for_completion`` → ``signal_end``) can never overtake it.
+            if not self._put_bounded(session, (sop_uid, ds)):
+                logger.warning(
+                    f"Dropping C-STORE for dead session {study_uid}/{series_uid} "
+                    "(queue full and session already ended/finished)"
+                )
+                return 0x0000
+            with self._lock:
+                self._count_received(session)
             return 0x0000
         except Exception as e:
             logger.error(f"SCP C-STORE handler error: {e}")
             return 0xC000
+
+    @staticmethod
+    def _count_received(session: MoveSession) -> None:
+        """Bump the received counter and fire ``done``. Call under ``_lock``."""
+        session.received_count += 1
+        if (
+            session.expected_count is not None
+            and session.received_count >= session.expected_count
+        ):
+            session.done.set()
+
+    @staticmethod
+    def _put_bounded(
+        session: MoveSession, item: tuple[str, Dataset] | None, *, sentinel: bool = False
+    ) -> bool:
+        """Bounded-retry put that can never wedge its caller.
+
+        Instance puts give up once the session has ended or been finished —
+        nobody will drain a doomed session, and by then the session can no
+        longer be certified complete. The end sentinel (``sentinel=True``) is
+        sent *after* ``ended`` is set, so it keeps trying until the session is
+        finished: a live consumer draining a briefly-full queue must still get
+        its prompt wake-up.
+        """
+        while True:
+            try:
+                session.queue.put(item, timeout=0.25)
+                return True
+            except queue.Full:
+                if session.finished or (not sentinel and session.ended):
+                    return False
 
     def _find_session(self, study_uid: str, series_uid: str) -> MoveSession | None:
         """Find the matching session. Must be called under ``_lock``.

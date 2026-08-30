@@ -31,6 +31,7 @@ from dimsechord._exceptions import (
     MoveToSelfError,
     NoPresentationContextError,
     PoolExhaustedError,
+    RetrieveBusyError,
 )
 from dimsechord._models import (
     BatchStoreResult,
@@ -58,7 +59,7 @@ from dimsechord._query_engine import QueryEngine
 from dimsechord._scp import StorageSCP
 from dimsechord._store_session import StoreSession
 
-__version__ = "0.7.0"
+__version__ = "0.8.0"
 
 # RUF022 wants ALL_CAPS constants grouped before CapWords classes (isort-style
 # categorization); this project instead keeps __all__ in plain codepoint
@@ -87,6 +88,7 @@ __all__ = [  # noqa: RUF022
     "PullEngine",
     "QueryEngine",
     "QueryRetrieveLevel",
+    "RetrieveBusyError",
     "RetrieveResult",
     "SeriesQuery",
     "SeriesResult",

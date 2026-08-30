@@ -42,6 +42,7 @@ class MemoryCachedSeries:
 
 _INSTANCE_OVERHEAD_BYTES = 16 * 1024
 _PIXEL_KEYWORDS = ("PixelData", "FloatPixelData", "DoubleFloatPixelData")
+_ORPHAN_SWEEP_INTERVAL_SECONDS = 3600.0
 
 
 def _series_size_bytes(entry: MemoryCachedSeries) -> int:
@@ -90,6 +91,7 @@ class DicomCache:
         )
         self._pending: set[Future[None]] = set()
         self._pending_lock = threading.Lock()
+        self._last_orphan_sweep = 0.0
 
     def _key(self, study_uid: str, series_uid: str) -> str:
         return f"{study_uid}/{series_uid}"
@@ -155,6 +157,8 @@ class DicomCache:
 
         Requires the completeness marker, an exact instance-row count match, and
         every file readable — a partial series is never returned (issue #15).
+        LRU is refreshed once, after every row's file has read successfully; a
+        failed load no longer touches any row, so it no longer refreshes LRU.
         """
         expected = self._index.series_expected_count(study_uid, series_uid)
         if expected is None:
@@ -177,7 +181,7 @@ class DicomCache:
                 )
                 return None
             instances[str(ds.SOPInstanceUID)] = ds
-            self._index.touch(row.sop_uid)
+        self._index.touch_many([row.sop_uid for row in rows])
         return instances
 
     def read_instance(self, study_uid: str, series_uid: str, sop_uid: str) -> Dataset | None:  # noqa: ARG002
@@ -269,19 +273,28 @@ class DicomCache:
         touched_series: set[tuple[str, str]] = set()
         for row in rows:
             Path(row.file_path).unlink(missing_ok=True)
-            self._index.delete(row.sop_uid)
             study_dirs.add(self._series_dir(row.study_uid, row.series_uid))
             touched_series.add((row.study_uid, row.series_uid))
-        for study_uid, series_uid in touched_series:
-            self._index.clear_series_complete(study_uid, series_uid)
+        self._index.delete_many([row.sop_uid for row in rows])
+        self._index.clear_series_complete_many(sorted(touched_series))
         self._cleanup_empty_dirs(study_dirs)
         return len(rows)
 
-    @staticmethod
-    def _cleanup_empty_dirs(series_dirs: set[Path]) -> None:
+    def _cleanup_empty_dirs(self, series_dirs: set[Path]) -> None:
+        """rmdir empty study/series dirs, confined to the cache tree.
+
+        Never removes ``base_dir`` itself or anything outside it — a guard
+        against a caller-supplied study/series dir that resolves elsewhere.
+        """
         for series_dir in series_dirs:
             for d in (series_dir, series_dir.parent):
-                if d.exists() and d.is_dir() and not any(d.iterdir()):
+                if (
+                    d.is_relative_to(self._base_dir)
+                    and d != self._base_dir
+                    and d.exists()
+                    and d.is_dir()
+                    and not any(d.iterdir())
+                ):
                     d.rmdir()
 
     def evict_expired(self) -> int:
@@ -290,8 +303,61 @@ class DicomCache:
             logger.info(f"Evicted {removed} expired cache instances")
         return removed
 
+    def evict_orphans(self, min_age_seconds: float = 3600.0) -> int:
+        """Remove .dcm files that have no index row and are older than the guard.
+
+        A crash between the tee's file write and its index upsert (index commit
+        is last, see ``write_instance``) leaves a file no index-driven eviction
+        can ever see. The age guard keeps in-flight tees safe: their
+        file-before-row window is milliseconds, not hours. A candidate is
+        checked against the index by exact file path, not just SOP UID, so a
+        re-homed instance's old file is still swept; each is also re-stat'd
+        immediately before removal so a concurrent tee re-writing the same SOP
+        during the sweep is spared.
+        """
+        cutoff = time.time() - min_age_seconds
+        candidates: list[Path] = []
+        for path in self._base_dir.rglob("*.dcm"):
+            try:
+                if path.stat().st_mtime < cutoff:
+                    candidates.append(path)
+            except OSError:
+                continue  # raced a concurrent eviction; skip
+        if not candidates:
+            return 0
+        indexed_paths = self._index.existing_file_paths([p.stem for p in candidates])
+        removed = 0
+        dirs: set[Path] = set()
+        for path in candidates:
+            if str(path) in indexed_paths:
+                continue
+            try:
+                # A concurrent tee re-writing this same SOP since collection
+                # refreshes its mtime — spare it rather than race the write.
+                if path.stat().st_mtime >= cutoff:
+                    continue
+            except OSError:
+                continue  # gone since collection — nothing to unlink
+            path.unlink(missing_ok=True)
+            removed += 1
+            dirs.add(path.parent)
+        self._cleanup_empty_dirs(dirs)
+        if removed:
+            logger.info(f"Evicted {removed} orphan cache files")
+        return removed
+
     def evict_by_size(self) -> int:
-        removed = self._remove_rows(self._index.lru_over_size(self._max_size_bytes))
+        """Evict LRU instances over the size budget.
+
+        Also sweeps orphans (``evict_orphans()``), but at most once per hour —
+        a direct ``evict_orphans()`` call is never throttled by this stamp.
+        """
+        removed = 0
+        now = time.time()
+        if now - self._last_orphan_sweep >= _ORPHAN_SWEEP_INTERVAL_SECONDS:
+            removed += self.evict_orphans()
+            self._last_orphan_sweep = now
+        removed += self._remove_rows(self._index.lru_over_size(self._max_size_bytes))
         if removed:
             logger.info(f"Evicted {removed} cache instances by size")
         return removed

@@ -13,3 +13,9 @@ docs/superpowers/
 
 # Claude Code local settings
 .claude/settings.local.json
+
+# OpenSpec local spec store (Claude working memory, not published)
+/openspec
+
+# Superpowers session artifacts (SDD briefs/reports/diffs)
+.superpowers/

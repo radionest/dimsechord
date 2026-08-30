@@ -1,6 +1,6 @@
 [project]
 name = "dimsechord"
-version = "0.7.0"
+version = "0.8.0"
 description = "Pure-Python building blocks for DICOM and DICOMweb services: DIMSE networking, caching, and DICOM↔JSON conversion."
 readme = "README.md"
 license = "MIT"

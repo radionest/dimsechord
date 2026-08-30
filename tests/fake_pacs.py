@@ -44,6 +44,7 @@ class FakePacs:
         self.move_identifiers: list[Dataset] = []
         self.get_identifiers: list[Dataset] = []
         self.find_response_delay: float = 0.0
+        self.move_response_delay: float = 0.0
         self.fail_find_with: int | None = None
         self.active_associations = 0
         self._assoc_lock = threading.Lock()
@@ -241,6 +242,8 @@ class FakePacs:
         matches = self._match(event.identifier)
         yield len(matches)  # 2nd yield: number of C-STORE sub-operations
         for ds in matches:
+            if self.move_response_delay:
+                time.sleep(self.move_response_delay)
             yield (0xFF00, ds)  # pending: send this instance
 
     def _on_get(

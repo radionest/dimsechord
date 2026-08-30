@@ -32,7 +32,7 @@ async def test_qido_then_wado_then_cross_face_hit(fake_pacs, seeded_study, free_
     fake_pacs.register_destination("E2EDEST", "127.0.0.1", scp_port)
     cache = DicomCache(base_dir=tmp_path / "c", index_path=tmp_path / "i.db")
     engine = PullEngine(pool=pool, scp=scp, cache=cache, pacs=peer,
-                        cmove_timeout=60.0, arrival_timeout=30.0)
+                        arrival_timeout=30.0)
     try:
         # Flow 2: WADO retrieve via move-to-self, build DICOM-JSON metadata.
         cached = await engine.ensure_series(study, series)
@@ -50,7 +50,7 @@ async def test_qido_then_wado_then_cross_face_hit(fake_pacs, seeded_study, free_
         cache._memory_cache.clear()
         scp.stop()
         engine2 = PullEngine(pool=pool, scp=StorageSCP(), cache=cache,
-                             pacs=peer, cmove_timeout=5.0, arrival_timeout=5.0)
+                             pacs=peer, arrival_timeout=5.0)
         again = [ds async for ds in engine2.stream_series(study, series)]
         assert {str(d.SOPInstanceUID) for d in again} == set(seeded_study[series])
     finally:
