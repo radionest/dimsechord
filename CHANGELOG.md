@@ -9,8 +9,9 @@
   `PullEngine.via_cget(cget_timeout=…)` sets the ACSE, DIMSE and network
   timeouts. Before, every SCU operation but `find_iter` silently ran on
   pynetdicom's defaults (30 s ACSE/DIMSE, 60 s network). The value bounds
-  association setup and the idle wait between two DIMSE messages, not the
-  whole operation. The 300 s defaults on `move_*`, `get_*`,
+  A-ASSOCIATE negotiation, release, and the idle wait between two DIMSE
+  messages. It does not bound the TCP connect, which stays on the OS
+  default, or the whole operation. The 300 s defaults on `move_*`, `get_*`,
   `store_instances_batch` and `cget_timeout` now apply as written: a
   C-MOVE/C-GET peer that sends no pending responses is no longer aborted
   after 30 s, and a peer that goes silent is given up on after 300 s instead

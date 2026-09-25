@@ -319,8 +319,10 @@ class DicomOperations:
         association, limiting the total number of concurrent DICOM connections.
 
         ``config.timeout`` becomes the AE's ACSE, DIMSE and network timeout,
-        so it caps association setup/release and the idle wait between two
-        DIMSE messages — not the operation's total duration.
+        so it caps A-ASSOCIATE negotiation, release, and the idle wait
+        between two DIMSE messages — not the TCP connect
+        (``connection_timeout`` stays unset) nor the operation's total
+        duration.
 
         Args:
             ae: Application Entity to associate with
