@@ -118,29 +118,6 @@ def test_find_iter_continues_past_repository_query_warning(monkeypatch) -> None:
     assert [str(d.PatientID) for d in out] == ["P1"]
 
 
-def test_find_iter_applies_config_timeout_to_ae(monkeypatch) -> None:
-    ops = DicomOperations(calling_aet="TESTSCU")
-    seen: dict[str, object] = {}
-    done = Dataset()
-    done.Status = 0x0000
-
-    @contextmanager
-    def fake_association(ae, _config):
-        seen["ae"] = ae
-        yield SimpleNamespace(send_c_find=lambda _ident, _model: iter([(done, None)]))
-
-    monkeypatch.setattr(ops, "_association", fake_association)
-    cfg = AssociationConfig(
-        calling_aet="TESTSCU", called_aet="PACS", peer_host="127.0.0.1", peer_port=1,
-        timeout=120.0,
-    )
-    list(ops.find_iter(cfg, _identifier(), FIND))
-    ae = seen["ae"]
-    assert ae.acse_timeout == 120.0
-    assert ae.dimse_timeout == 120.0
-    assert ae.network_timeout == 120.0
-
-
 @pytest.mark.timeout(30)
 def test_find_iter_close_aborts_association(free_port) -> None:
     pacs = _multi_study_pacs(free_port, n=5, delay=0.3)

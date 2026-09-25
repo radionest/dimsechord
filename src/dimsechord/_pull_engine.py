@@ -55,6 +55,11 @@ logger = logging.getLogger(__name__)
 # the reaper covers the rest.
 _ABORT_JOIN_TIMEOUT = 2.0
 
+# The move association's ACSE/DIMSE/network timeout. An abandoned driver
+# parked in the DIMSE receive exits only at this bound, so it also caps how
+# long the reaper holds the move slot.
+_MOVE_ASSOC_TIMEOUT = 30.0
+
 # Default for the retained-but-inert cmove_timeout kwarg; a non-default value
 # triggers the deprecation warning in PullEngine.__init__.
 _CMOVE_TIMEOUT_DEFAULT = 300.0
@@ -210,6 +215,7 @@ class _MoveToSelfTransport:
                 called_aet=self._pacs.aet,
                 peer_host=self._pacs.host,
                 peer_port=self._pacs.port,
+                timeout=_MOVE_ASSOC_TIMEOUT,
             )
             # SCU built per lease so its AE title == the leased AET (the C-MOVE
             # destination); a shared SCU with a fixed calling AET would mismatch

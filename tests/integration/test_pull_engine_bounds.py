@@ -104,16 +104,8 @@ def test_abandoned_move_frees_slot_and_kills_driver(
 ) -> None:
     import logging
 
-    from dimsechord._scu import DicomOperations
-
-    original_create_ae = DicomOperations._create_ae
-
-    def create_ae_with_short_dimse(self):
-        ae = original_create_ae(self)
-        ae.dimse_timeout = 2.0  # abort can't wake a parked DIMSE receive; bound it
-        return ae
-
-    monkeypatch.setattr(DicomOperations, "_create_ae", create_ae_with_short_dimse)
+    # abort can't wake a parked DIMSE receive; bound it for the test
+    monkeypatch.setattr("dimsechord._pull_engine._MOVE_ASSOC_TIMEOUT", 2.0)
 
     eng, _pool, scp, cache = _make_engine(
         fake_pacs, free_port, tmp_path, arrival_timeout=10.0, move_lease_timeout=0.5

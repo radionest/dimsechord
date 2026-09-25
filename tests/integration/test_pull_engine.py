@@ -228,20 +228,13 @@ def test_aborted_stream_not_served_from_disk(
 ) -> None:
     """Issue #15 e2e: a consumer abandoning the stream must not poison the disk tier.
 
-    Shrinks the move AE's dimse_timeout (same test-only seam as
-    test_scu_move.py's cross-thread-abort test): abort cannot wake a driver
-    already parked in the DIMSE receive, so this bounds how long the reaper
-    takes to release the slot the re-pull below needs, instead of the real
-    ~30s dimse_timeout default.
+    Shrinks the move association's timeout (``_MOVE_ASSOC_TIMEOUT``): abort
+    cannot wake a driver already parked in the DIMSE receive, so this bounds
+    how long the reaper takes to release the slot the re-pull below needs,
+    instead of the real 30 s.
     """
-    original_create_ae = DicomOperations._create_ae
-
-    def create_ae_with_short_dimse(self):
-        ae = original_create_ae(self)
-        ae.dimse_timeout = 2.0  # abort can't wake a parked DIMSE receive; bound it for the test
-        return ae
-
-    monkeypatch.setattr(DicomOperations, "_create_ae", create_ae_with_short_dimse)
+    # abort can't wake a parked DIMSE receive; bound it for the test
+    monkeypatch.setattr("dimsechord._pull_engine._MOVE_ASSOC_TIMEOUT", 2.0)
 
     eng, cache = engine
     study, series = seeded_study["study"][0], seeded_study["series"][0]

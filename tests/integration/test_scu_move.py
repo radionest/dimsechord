@@ -2,7 +2,6 @@ import threading
 import time
 
 import pytest
-from pynetdicom import AE
 from pynetdicom.sop_class import (  # type: ignore[attr-defined]
     StudyRootQueryRetrieveInformationModelFind,
     StudyRootQueryRetrieveInformationModelMove,
@@ -244,7 +243,7 @@ def test_move_pre_aborted_handle_never_dispatches(fake_pacs, seeded_study) -> No
 
 @pytest.mark.timeout(30)
 def test_move_cross_thread_abort_ends_early_and_never_success(
-    fake_pacs, seeded_study, free_port, monkeypatch
+    fake_pacs, seeded_study, free_port
 ) -> None:
     """Cross-thread abort during a stalled DIMSE wait.
 
@@ -262,24 +261,15 @@ def test_move_cross_thread_abort_ends_early_and_never_success(
     ever delivered.
 
     To make the direct "never success" assertion live (not dead code behind
-    a driver that's still blocked) without adding a production knob, this
-    test monkeypatches ``DicomOperations._create_ae`` to shrink the move
-    AE's ``dimse_timeout`` — abort can't wake the parked receive, so bounding
-    it is what makes the parked call resolve inside the test instead of
-    after the default 30 s. The test still drives move() from a background
-    thread — mirroring the real driver-thread/consumer-thread split this
-    handle is built for — and additionally verifies via the destination that
-    nothing was ever delivered.
+    a driver that's still blocked), this test shrinks ``config.timeout``,
+    which becomes the move AE's ``dimse_timeout`` — abort can't wake the
+    parked receive, so bounding it is what makes the parked call resolve
+    inside the test instead of after the default 30 s. The test still drives
+    move() from a background thread — mirroring the real
+    driver-thread/consumer-thread split this handle is built for — and
+    additionally verifies via the destination that nothing was ever
+    delivered.
     """
-    original_create_ae = DicomOperations._create_ae
-
-    def create_ae_with_short_dimse(self: DicomOperations) -> AE:
-        ae = original_create_ae(self)
-        ae.dimse_timeout = 2.0  # abort can't wake a parked DIMSE receive; bound it for the test
-        return ae
-
-    monkeypatch.setattr(DicomOperations, "_create_ae", create_ae_with_short_dimse)
-
     dest_aet, dest_port = "ABORTDEST", free_port()
     scp = StorageSCP()
     scp.start({dest_aet: dest_port})
@@ -294,6 +284,7 @@ def test_move_cross_thread_abort_ends_early_and_never_success(
     config = AssociationConfig(
         calling_aet="MOVESCU", called_aet=fake_pacs.aet,
         peer_host="127.0.0.1", peer_port=fake_pacs.port,
+        timeout=2.0,  # abort can't wake a parked DIMSE receive; bound it for the test
     )
     request = RetrieveRequest(
         level=QueryRetrieveLevel.SERIES,
