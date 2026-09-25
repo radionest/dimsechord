@@ -318,9 +318,13 @@ class DicomOperations:
         Acquires the global semaphore (if configured) before establishing the
         association, limiting the total number of concurrent DICOM connections.
 
+        ``config.timeout`` becomes the AE's ACSE, DIMSE and network timeout,
+        so it caps association setup/release and the idle wait between two
+        DIMSE messages — not the operation's total duration.
+
         Args:
             ae: Application Entity to associate with
-            config: Association configuration (peer host, port, AET)
+            config: Association configuration (peer host, port, AET, timeout)
             **kwargs: Extra arguments for ae.associate() (evt_handlers, ext_neg)
 
         Yields:
@@ -329,6 +333,11 @@ class DicomOperations:
         Raises:
             AssociationError: If association cannot be established
         """
+        # network_timeout too: pynetdicom's 60 s idle default would cut any
+        # longer timeout short.
+        ae.acse_timeout = config.timeout
+        ae.dimse_timeout = config.timeout
+        ae.network_timeout = config.timeout
         semaphore = DicomOperations._association_semaphore
         if semaphore is not None:
             semaphore.acquire()
@@ -620,13 +629,6 @@ class DicomOperations:
         """
         ae = AE(ae_title=self.calling_aet)
         ae.maximum_pdu_size = self.max_pdu
-        # _association ignores config.timeout for the typed finds; the raw
-        # streaming path applies it to all three AE timeouts: dimse_timeout
-        # makes it the effective idle cap between two responses, and setting
-        # network_timeout keeps values above pynetdicom's 60 s default honored.
-        ae.acse_timeout = config.timeout
-        ae.dimse_timeout = config.timeout
-        ae.network_timeout = config.timeout
         ae.add_requested_context(model)
         with self._association(ae, config) as assoc:
             try:

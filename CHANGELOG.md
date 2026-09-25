@@ -1,5 +1,23 @@
 # Changelog
 
+## 0.8.1 — UNRELEASED
+
+### Fixed
+
+- `AssociationConfig.timeout` now reaches the association (issue #5). The
+  `timeout=` of `DicomClient.find_*` / `store_*` / `move_*` / `get_*` and
+  `PullEngine.via_cget(cget_timeout=…)` sets the ACSE, DIMSE and network
+  timeouts. Before, every SCU operation but `find_iter` silently ran on
+  pynetdicom's defaults (30 s ACSE/DIMSE, 60 s network). The value bounds
+  association setup and the idle wait between two DIMSE messages, not the
+  whole operation. The 300 s defaults on `move_*`, `get_*`,
+  `store_instances_batch` and `cget_timeout` now apply as written: a
+  C-MOVE/C-GET peer that sends no pending responses is no longer aborted
+  after 30 s, and a peer that goes silent is given up on after 300 s instead
+  of 30 s. Pass a smaller `timeout` to fail faster. `PullEngine`'s
+  C-MOVE-to-self association keeps a 30 s timeout, so the move-slot reaper
+  bound is unchanged.
+
 ## 0.8.0 — 2026-08-30
 
 Every wait on the C-MOVE-to-self retrieve path is now short and bounded: no

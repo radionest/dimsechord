@@ -1,8 +1,11 @@
+from types import SimpleNamespace
+
 from pydicom import Dataset
 from pydicom.multival import MultiValue
 from pydicom.uid import UID
+from pynetdicom import AE
 
-from dimsechord._models import ImageQuery, SeriesQuery, StudyQuery
+from dimsechord._models import AssociationConfig, ImageQuery, SeriesQuery, StudyQuery
 from dimsechord._scu import DicomOperations, _ds_float, _ds_str_list
 
 
@@ -166,3 +169,21 @@ def test_parse_image_result_populates_extended_fields() -> None:
     assert r.image_type == ["ORIGINAL", "PRIMARY"]
     assert r.content_date == "20200101"
     assert r.slice_thickness == 2.5
+
+
+# ── _association ─────────────────────────────────────────────────
+def test_association_applies_config_timeout_before_associating(monkeypatch) -> None:
+    ae = AE(ae_title="X")
+    seen: dict[str, float | None] = {}
+
+    def fake_associate(*_args, **_kwargs) -> SimpleNamespace:
+        seen.update(acse=ae.acse_timeout, dimse=ae.dimse_timeout, network=ae.network_timeout)
+        return SimpleNamespace(is_established=True, release=lambda: None)
+
+    monkeypatch.setattr(ae, "associate", fake_associate)
+    cfg = AssociationConfig(
+        calling_aet="X", called_aet="PACS", peer_host="127.0.0.1", peer_port=1, timeout=120.0
+    )
+    with DicomOperations(calling_aet="X")._association(ae, cfg):
+        pass
+    assert seen == {"acse": 120.0, "dimse": 120.0, "network": 120.0}
