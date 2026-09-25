@@ -86,7 +86,8 @@ asyncio.run(main())
 > get methods and to `PullEngine.via_cget(cget_timeout=…)` now reaches the
 > association as its ACSE, DIMSE and network timeout. Before, pynetdicom's
 > 30 s / 60 s defaults applied silently. The 300 s defaults on move, get and
-> batch store now apply as written.
+> batch store now apply as written. Each bounds one wait (negotiation, or the
+> idle gap between two DIMSE messages), not the whole operation.
 
 > **0.8.0:** every wait on the C-MOVE-to-self retrieve path is now short and
 > bounded, failing with a typed error instead of queuing for minutes — the

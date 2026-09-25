@@ -51,9 +51,9 @@ implementations.
   exited — via a reaper thread when it outlives the 2 s abort join (a
   cross-thread `Association.abort()` cannot wake a driver parked in the
   DIMSE receive, per pynetdicom 3.0.4; that wait only resolves at
-  `dimse_timeout`, which `_association` sets from `AssociationConfig.timeout`,
-  30 s for the move because `_drive_move` passes no `timeout`) — never
-  while it may still be alive, so a re-leased
+  `dimse_timeout`, which `_association` sets from `AssociationConfig.timeout`:
+  `_pull_engine._MOVE_ASSOC_TIMEOUT`, 30 s, for the move) — never while it
+  may still be alive, so a re-leased
   AET can never receive a dying move's stray C-STOREs into a fresh session;
   if the reaper itself fails to start, the slot is deliberately leaked (with
   an error log) rather than released. With N > 1 pooled AETs the guarantee

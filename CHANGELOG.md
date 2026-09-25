@@ -15,9 +15,12 @@
   `store_instances_batch` and `cget_timeout` now apply as written: a
   C-MOVE/C-GET peer that sends no pending responses is no longer aborted
   after 30 s, and a peer that goes silent is given up on after 300 s instead
-  of 30 s. Pass a smaller `timeout` to fail faster. `PullEngine`'s
-  C-MOVE-to-self association keeps a 30 s timeout, so the move-slot reaper
-  bound is unchanged.
+  of 30 s. That includes a peer that never answers A-ASSOCIATE: it now holds
+  the `set_max_concurrent_associations` permit and a `to_thread` worker for
+  up to `timeout`, and cancelling the awaiting task frees neither. Pass a
+  smaller `timeout` to fail faster. `PullEngine`'s C-MOVE-to-self
+  association keeps a fixed 30 s timeout, so the move-slot reaper bound is
+  unchanged.
 
 ## 0.8.0 — 2026-08-30
 

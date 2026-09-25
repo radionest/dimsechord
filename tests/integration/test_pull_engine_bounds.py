@@ -3,13 +3,12 @@
 import threading
 import time
 import warnings
-from functools import partial
 
 import pytest
 
 from dimsechord._cache import DicomCache
 from dimsechord._exceptions import PoolExhaustedError, RetrieveBusyError
-from dimsechord._models import AssociationConfig, DicomNode
+from dimsechord._models import DicomNode
 from dimsechord._pool import AssociationPool
 from dimsechord._pull_engine import PullEngine
 from dimsechord._scp import StorageSCP
@@ -105,10 +104,8 @@ def test_abandoned_move_frees_slot_and_kills_driver(
 ) -> None:
     import logging
 
-    # abort can't wake a parked DIMSE receive; bound it via the move config's timeout
-    monkeypatch.setattr(
-        "dimsechord._pull_engine.AssociationConfig", partial(AssociationConfig, timeout=2.0)
-    )
+    # abort can't wake a parked DIMSE receive; bound it for the test
+    monkeypatch.setattr("dimsechord._pull_engine._MOVE_ASSOC_TIMEOUT", 2.0)
 
     eng, _pool, scp, cache = _make_engine(
         fake_pacs, free_port, tmp_path, arrival_timeout=10.0, move_lease_timeout=0.5
